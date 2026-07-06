@@ -1,0 +1,858 @@
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+<meta charset='UTF-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>NBA Parlay Correlations</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+       background: #0f1117; color: #e2e8f0; padding: 32px 24px; }
+h1 { font-size: 1.6rem; font-weight: 700; margin-bottom: 6px; color: #f8fafc; }
+.subtitle { color: #94a3b8; font-size: 0.875rem; margin-bottom: 40px; }
+section { margin-bottom: 52px; }
+h2 { font-size: 1.15rem; font-weight: 600; color: #f1f5f9;
+     border-left: 3px solid #8b5cf6; padding-left: 12px; margin-bottom: 6px; }
+.desc { font-size: 0.8rem; color: #64748b; margin-bottom: 14px; padding-left: 15px; }
+.table-wrap { overflow-x: auto; border-radius: 8px; border: 1px solid #1e293b; }
+table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+thead th { background: #1e293b; color: #94a3b8; font-weight: 600;
+           padding: 10px 12px; text-align: left; white-space: nowrap;
+           border-bottom: 1px solid #334155; cursor: help; }
+tbody tr { border-bottom: 1px solid #1e293b; }
+tbody tr:hover { background: #1a2235; }
+td { padding: 9px 12px; vertical-align: middle; }
+.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.prob-col { color: #94a3b8; font-size: 0.78rem; }
+.legs-cell { line-height: 1.7; }
+.leg { display: block; }
+.prop-tag { background: #2d1b69; color: #c4b5fd; border-radius: 4px;
+            padding: 1px 6px; font-size: 0.74rem; font-weight: 600; white-space: nowrap; }
+.team-badge { background: #1e293b; color: #cbd5e1; border-radius: 4px;
+              padding: 3px 8px; font-size: 0.78rem; font-weight: 700;
+              letter-spacing: 0.05em; white-space: nowrap; }
+.edge-1 { color: #fbbf24; }
+.edge-2 { color: #fb923c; }
+.edge-3 { color: #f87171; }
+.edge-4 { color: #a78bfa; }
+.edge-5 { color: #34d399; }
+.legend { display: flex; gap: 18px; font-size: 0.78rem; margin-bottom: 32px; flex-wrap: wrap; }
+.legend-item { display: flex; align-items: center; gap: 6px; }
+.legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+.glossary { background: #1e293b; border-radius: 8px; padding: 18px 22px;
+            font-size: 0.8rem; color: #94a3b8; margin-bottom: 40px; }
+.glossary h3 { font-size: 0.85rem; color: #cbd5e1; margin-bottom: 10px; }
+.glossary dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; }
+.glossary dt { color: #c4b5fd; font-weight: 600; }
+</style>
+</head>
+<body>
+<h1>NBA Parlay Correlation Report</h1>
+<p class='subtitle'>2025-26 season &middot; Kalshi market data &middot; BH-FDR q=10% &middot; in-sample estimates &middot; through 2026-06-07</p>
+<div class='glossary'>
+  <h3>Column guide</h3>
+  <dl>
+    <dt>n</dt><dd>Shared games -- games where both players had resolved Kalshi markets</dd>
+    <dt>r</dt><dd>Pearson correlation of surprise series (outcome - implied prob)</dd>
+    <dt>CI lo</dt><dd>Fisher 95% CI lower bound on r (conservative floor on true correlation)</dd>
+    <dt>Avg Prob</dt><dd>Average Kalshi pregame implied probability per leg</dd>
+    <dt>Joint Hit %</dt><dd>Fraction of shared games where ALL legs hit -- observed in-sample</dd>
+    <dt>Indep %</dt><dd>Product of Avg Probs -- expected joint hit rate under independence</dd>
+    <dt>Edge Ratio</dt><dd>Joint Hit % / Indep % -- above 1.2x clears typical parlay vig</dd>
+  </dl>
+</div>
+<div class='legend'>
+  <span style='color:#94a3b8;font-size:0.78rem;align-self:center;'>Edge Ratio:</span>
+  <div class='legend-item'><div class='legend-dot' style='background:#fbbf24'></div><span class='edge-1'>1.2-1.5x</span></div>
+  <div class='legend-item'><div class='legend-dot' style='background:#fb923c'></div><span class='edge-2'>1.5-2x</span></div>
+  <div class='legend-item'><div class='legend-dot' style='background:#f87171'></div><span class='edge-3'>2-3x</span></div>
+  <div class='legend-item'><div class='legend-dot' style='background:#a78bfa'></div><span class='edge-4'>3-4x</span></div>
+  <div class='legend-item'><div class='legend-dot' style='background:#34d399'></div><span class='edge-5'>4x+</span></div>
+</div>
+
+    <section>
+      <h2>Best Credibility</h2>
+      <p class='desc'>Ranked by log(edge) x sqrt(n) x CI-lower. Filters: r &lt; 0.95, n &ge; 8, p_joint &gt; 0, edge &ge; 1.2x.</p>
+      <div class='table-wrap'>
+      <table>
+        <thead><tr>
+          <th>Team</th><th>Props</th>
+          <th title='Shared games'>n</th>
+          <th title='Max pairwise r'>r</th>
+          <th title='Fisher 95% CI lower'>CI lo</th>
+          <th title='Avg pregame implied prob per leg'>Avg Prob</th>
+          <th title='Observed joint hit rate'>Joint Hit %</th>
+          <th title='Expected under independence'>Indep %</th>
+          <th title='Joint / Indep'>Edge Ratio</th>
+          <th>Score</th>
+        </tr></thead>
+        <tbody>
+        <tr>
+          <td><span class='team-badge'>PHI</span></td>
+          <td class='legs-cell'><span class='leg'>VJ Edgecombe &nbsp;<span class='prop-tag'>10+ Reb</span></span><br><span class='leg'>Tyrese Maxey &nbsp;<span class='prop-tag'>4+ 3PM</span></span></td>
+          <td class='num'>14</td>
+          <td class='num'>0.797</td>
+          <td class='num'>0.462</td>
+          <td class='num prob-col'>29.4% · 27.9%</td>
+          <td class='num'>14.3%</td>
+          <td class='num'>8.2%</td>
+          <td class='num edge-2'><strong>1.74x</strong></td>
+          <td class='num'>0.96</td>
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>CLE</span></td>
+          <td class='legs-cell'><span class='leg'>James Harden &nbsp;<span class='prop-tag'>5+ Reb</span></span><br><span class='leg'>Evan Mobley &nbsp;<span class='prop-tag'>10+ Reb</span></span><br><span class='leg'>Donovan Mitchell &nbsp;<span class='prop-tag'>8+ Ast</span></span></td>
+          <td class='num'>10</td>
+          <td class='num'>0.897</td>
+          <td class='num'>0.352</td>
+          <td class='num prob-col'>77.1% · 39.2% · 19.9%</td>
+          <td class='num'>10.0%</td>
+          <td class='num'>6.0%</td>
+          <td class='num edge-2'><strong>1.66x</strong></td>
+          <td class='num'>0.56</td>
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>PHI</span></td>
+          <td class='legs-cell'><span class='leg'>VJ Edgecombe &nbsp;<span class='prop-tag'>10+ Reb</span></span><br><span class='leg'>Tyrese Maxey &nbsp;<span class='prop-tag'>6+ Ast</span></span><br><span class='leg'>Paul George &nbsp;<span class='prop-tag'>4+ Ast</span></span></td>
+          <td class='num'>12</td>
+          <td class='num'>0.881</td>
+          <td class='num'>0.430</td>
+          <td class='num prob-col'>33.2% · 78.8% · 44.2%</td>
+          <td class='num'>16.7%</td>
+          <td class='num'>11.5%</td>
+          <td class='num edge-1'><strong>1.44x</strong></td>
+          <td class='num'>0.54</td>
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>NYK</span></td>
+          <td class='legs-cell'><span class='leg'>Jalen Brunson &nbsp;<span class='prop-tag'>10+ Ast</span></span><br><span class='leg'>Karl-Anthony Towns &nbsp;<span class='prop-tag'>1+ 3PM</span></span><br><span class='leg'>Josh Hart &nbsp;<span class='prop-tag'>5+ 3PM</span></span></td>
+          <td class='num'>14</td>
+          <td class='num'>0.808</td>
+          <td class='num'>0.177</td>
+          <td class='num prob-col'>28.6% · 92.1% · 24.6%</td>
+          <td class='num'>14.3%</td>
+          <td class='num'>6.5%</td>
+          <td class='num edge-3'><strong>2.20x</strong></td>
+          <td class='num'>0.52</td>
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>NYK</span></td>
+          <td class='legs-cell'><span class='leg'>Mikal Bridges &nbsp;<span class='prop-tag'>6+ Reb</span></span><br><span class='leg'>Jalen Brunson &nbsp;<span class='prop-tag'>4+ Reb</span></span><br><span class='leg'>Karl-Anthony Towns &nbsp;<span class='prop-tag'>3+ 3PM</span></span></td>
+          <td class='num'>11</td>
+          <td class='num'>0.839</td>
+          <td class='num'>0.168</td>
+          <td class='num prob-col'>22.5% · 44.8% · 36.5%</td>
+          <td class='num'>9.1%</td>
+          <td class='num'>3.7%</td>
+          <td class='num edge-3'><strong>2.46x</strong></td>
+          <td class='num'>0.50</td>
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>NYK</span></td>
+          <td class='legs-cell'><span class='leg'>Karl-Anthony Towns &nbsp;<span class='prop-tag'>15+ Pts</span></span><br><span class='leg'>Jalen Brunson &nbsp;<span class='prop-tag'>10+ Ast</span></span><br><span class='leg'>Josh Hart &nbsp;<span class='prop-tag'>5+ 3PM</span></span></td>
+          <td class='num'>13</td>
+          <td class='num'>0.678</td>
+          <td class='num'>0.177</td>
+          <td class='num prob-col'>91.5% · 29.4% · 26.2%</td>
+          <td class='num'>15.4%</td>
+          <td class='num'>7.0%</td>
+          <td class='num edge-3'><strong>2.19x</strong></td>
+          <td class='num'>0.50</td>
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>NYK</span></td>
+          <td class='legs-cell'><span class='leg'>Jalen Brunson &nbsp;<span class='prop-tag'>10+ Ast</span></span><br><span class='leg'>Josh Hart &nbsp;<span class='prop-tag'>5+ 3PM</span></span></td>
+          <td class='num'>15</td>
+          <td class='num'>0.632</td>
+          <td class='num'>0.177</td>
+          <td class='num prob-col'>27.7% · 23.3%</td>
+          <td class='num'>13.3%</td>
+          <td class='num'>6.5%</td>
+          <td class='num edge-3'><strong>2.07x</strong></td>
+          <td class='num'>0.50</td>
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>CLE</span></td>
+          <td class='legs-cell'><span class='leg'>Donovan Mitchell &nbsp;<span class='prop-tag'>30+ Pts</span></span><br><span class='leg'>James Harden &nbsp;<span class='prop-tag'>5+ 3PM</span></span></td>
+          <td class='num'>10</td>
+          <td class='num'>0.928</td>
+          <td class='num'>0.718</td>
+          <td class='num prob-col'>63.3% · 26.2%</td>
+          <td class='num'>20.0%</td>
+          <td class='num'>16.6%</td>
+          <td class='num edge-1'><strong>1.21x</strong></td>
+          <td class='num'>0.43</td>
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>NYK</span></td>
+          <td class='legs-cell'><span class='leg'>Mikal Bridges &nbsp;<span class='prop-tag'>15+ Pts</span></span><br><span class='leg'>Karl-Anthony Towns &nbsp;<span class='prop-tag'>2+ 3PM</span></span><br><span class='leg'>Josh Hart &nbsp;<span class='prop-tag'>4+ 3PM</span></span></td>
+          <td class='num'>12</td>
+          <td class='num'>0.873</td>
+          <td class='num'>0.384</td>
+          <td class='num prob-col'>71.9% · 55.0% · 15.5%</td>
+          <td class='num'>8.3%</td>
+          <td class='num'>6.1%</td>
+          <td class='num edge-1'><strong>1.36x</strong></td>
+          <td class='num'>0.41</td>
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>NYK</span></td>
+          <td class='legs-cell'><span class='leg'>Mikal Bridges &nbsp;<span class='prop-tag'>6+ Reb</span></span><br><span class='leg'>Josh Hart &nbsp;<span class='prop-tag'>6+ Reb</span></span><br><span class='leg'>Karl-Anthony Towns &nbsp;<span class='prop-tag'>3+ 3PM</span></span></td>
+          <td class='num'>11</td>
+          <td class='num'>0.813</td>
+          <td class='num'>0.286</td>
+          <td class='num prob-col'>22.7% · 78.2% · 36.9%</td>
+          <td class='num'>9.1%</td>
+          <td class='num'>6.6%</td>
+          <td class='num edge-1'><strong>1.39x</strong></td>
+          <td class='num'>0.31</td>
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>ORL</span></td>
+          <td class='legs-cell'><span class='leg'>Wendell Carter Jr. &nbsp;<span class='prop-tag'>12+ Reb</span></span><br><span class='leg'>Paolo Banchero &nbsp;<span class='prop-tag'>12+ Reb</span></span></td>
+          <td class='num'>12</td>
+          <td class='num'>0.804</td>
+          <td class='num'>0.427</td>
+          <td class='num prob-col'>23.3% · 29.0%</td>
+          <td class='num'>8.3%</td>
+          <td class='num'>6.8%</td>
+          <td class='num edge-1'><strong>1.23x</strong></td>
+          <td class='num'>0.31</td>
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>NYK</span></td>
+          <td class='legs-cell'><span class='leg'>Josh Hart &nbsp;<span class='prop-tag'>6+ Reb</span></span><br><span class='leg'>Mikal Bridges &nbsp;<span class='prop-tag'>1+ 3PM</span></span><br><span class='leg'>Karl-Anthony Towns &nbsp;<span class='prop-tag'>3+ 3PM</span></span></td>
+          <td class='num'>13</td>
+          <td class='num'>0.696</td>
+          <td class='num'>0.205</td>
+          <td class='num prob-col'>81.4% · 74.1% · 39.3%</td>
+          <td class='num'>30.8%</td>
+          <td class='num'>23.7%</td>
+          <td class='num edge-1'><strong>1.30x</strong></td>
+          <td class='num'>0.19</td>
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>PHI</span></td>
+          <td class='legs-cell'><span class='leg'>Tyrese Maxey &nbsp;<span class='prop-tag'>25+ Pts</span></span><br><span class='leg'>VJ Edgecombe &nbsp;<span class='prop-tag'>10+ Reb</span></span></td>
+          <td class='num'>12</td>
+          <td class='num'>0.736</td>
+          <td class='num'>0.281</td>
+          <td class='num prob-col'>61.4% · 33.7%</td>
+          <td class='num'>25.0%</td>
+          <td class='num'>20.7%</td>
+          <td class='num edge-1'><strong>1.21x</strong></td>
+          <td class='num'>0.19</td>
+        </tr></tbody>
+      </table></div>
+    </section>
+
+    <section>
+      <h2>Genuine Correlations</h2>
+      <p class='desc'>r &lt; 0.95, n &ge; 10, joint event occurred, edge &ge; 1.0x. Sorted by CI lower bound.</p>
+      <div class='table-wrap'>
+      <table>
+        <thead><tr>
+          <th>Team</th><th>Props</th>
+          <th title='Shared games'>n</th>
+          <th title='Max pairwise r'>r</th>
+          <th title='Fisher 95% CI lower'>CI lo</th>
+          <th title='Avg pregame implied prob per leg'>Avg Prob</th>
+          <th title='Observed joint hit rate'>Joint Hit %</th>
+          <th title='Expected under independence'>Indep %</th>
+          <th title='Joint / Indep'>Edge Ratio</th>
+          
+        </tr></thead>
+        <tbody>
+        <tr>
+          <td><span class='team-badge'>NYK</span></td>
+          <td class='legs-cell'><span class='leg'>OG Anunoby &nbsp;<span class='prop-tag'>4+ Reb</span></span><br><span class='leg'>Karl-Anthony Towns &nbsp;<span class='prop-tag'>8+ Reb</span></span></td>
+          <td class='num'>13</td>
+          <td class='num'>0.924</td>
+          <td class='num'>0.761</td>
+          <td class='num prob-col'>84.7% · 91.8%</td>
+          <td class='num'>84.6%</td>
+          <td class='num'>77.7%</td>
+          <td class='num edge-1'><strong>1.09x</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>MIN</span></td>
+          <td class='legs-cell'><span class='leg'>Rudy Gobert &nbsp;<span class='prop-tag'>12+ Reb</span></span><br><span class='leg'>Jaden McDaniels &nbsp;<span class='prop-tag'>6+ Reb</span></span></td>
+          <td class='num'>10</td>
+          <td class='num'>0.933</td>
+          <td class='num'>0.735</td>
+          <td class='num prob-col'>47.9% · 74.4%</td>
+          <td class='num'>40.0%</td>
+          <td class='num'>35.6%</td>
+          <td class='num edge-1'><strong>1.12x</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>HOU</span></td>
+          <td class='legs-cell'><span class='leg'>Amen Thompson &nbsp;<span class='prop-tag'>4+ Ast</span></span><br><span class='leg'>Alperen Sengun &nbsp;<span class='prop-tag'>4+ Ast</span></span></td>
+          <td class='num'>12</td>
+          <td class='num'>0.920</td>
+          <td class='num'>0.733</td>
+          <td class='num prob-col'>92.1% · 84.3%</td>
+          <td class='num'>83.3%</td>
+          <td class='num'>77.7%</td>
+          <td class='num edge-1'><strong>1.07x</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>ORL</span></td>
+          <td class='legs-cell'><span class='leg'>Jalen Suggs &nbsp;<span class='prop-tag'>15+ Pts</span></span><br><span class='leg'>Franz Wagner &nbsp;<span class='prop-tag'>4+ Reb</span></span></td>
+          <td class='num'>10</td>
+          <td class='num'>0.930</td>
+          <td class='num'>0.724</td>
+          <td class='num prob-col'>60.8% · 79.6%</td>
+          <td class='num'>50.0%</td>
+          <td class='num'>48.4%</td>
+          <td class='num edge-1'><strong>1.03x</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>CLE</span></td>
+          <td class='legs-cell'><span class='leg'>Donovan Mitchell &nbsp;<span class='prop-tag'>30+ Pts</span></span><br><span class='leg'>James Harden &nbsp;<span class='prop-tag'>5+ 3PM</span></span></td>
+          <td class='num'>10</td>
+          <td class='num'>0.928</td>
+          <td class='num'>0.718</td>
+          <td class='num prob-col'>63.3% · 26.2%</td>
+          <td class='num'>20.0%</td>
+          <td class='num'>16.6%</td>
+          <td class='num edge-1'><strong>1.21x</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>NYK</span></td>
+          <td class='legs-cell'><span class='leg'>Mikal Bridges &nbsp;<span class='prop-tag'>10+ Pts</span></span><br><span class='leg'>Jalen Brunson &nbsp;<span class='prop-tag'>1+ 3PM</span></span></td>
+          <td class='num'>17</td>
+          <td class='num'>0.889</td>
+          <td class='num'>0.713</td>
+          <td class='num prob-col'>88.3% · 94.4%</td>
+          <td class='num'>88.2%</td>
+          <td class='num'>83.4%</td>
+          <td class='num edge-1'><strong>1.06x</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>DET</span></td>
+          <td class='legs-cell'><span class='leg'>Tobias Harris &nbsp;<span class='prop-tag'>15+ Pts</span></span><br><span class='leg'>Cade Cunningham &nbsp;<span class='prop-tag'>1+ 3PM</span></span></td>
+          <td class='num'>15</td>
+          <td class='num'>0.882</td>
+          <td class='num'>0.673</td>
+          <td class='num prob-col'>80.9% · 97.3%</td>
+          <td class='num'>80.0%</td>
+          <td class='num'>78.7%</td>
+          <td class='num edge-1'><strong>1.02x</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>PHI</span></td>
+          <td class='legs-cell'><span class='leg'>VJ Edgecombe &nbsp;<span class='prop-tag'>10+ Reb</span></span><br><span class='leg'>Paul George &nbsp;<span class='prop-tag'>4+ Ast</span></span></td>
+          <td class='num'>13</td>
+          <td class='num'>0.881</td>
+          <td class='num'>0.641</td>
+          <td class='num prob-col'>31.5% · 48.4%</td>
+          <td class='num'>15.4%</td>
+          <td class='num'>15.2%</td>
+          <td class='num edge-1'><strong>1.01x</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>SAS</span></td>
+          <td class='legs-cell'><span class='leg'>Dylan Harper &nbsp;<span class='prop-tag'>10+ Pts</span></span><br><span class='leg'>Stephon Castle &nbsp;<span class='prop-tag'>15+ Pts</span></span></td>
+          <td class='num'>20</td>
+          <td class='num'>0.824</td>
+          <td class='num'>0.600</td>
+          <td class='num prob-col'>86.6% · 94.4%</td>
+          <td class='num'>85.0%</td>
+          <td class='num'>81.8%</td>
+          <td class='num edge-1'><strong>1.04x</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>DET</span></td>
+          <td class='legs-cell'><span class='leg'>Cade Cunningham &nbsp;<span class='prop-tag'>30+ Pts</span></span><br><span class='leg'>Tobias Harris &nbsp;<span class='prop-tag'>1+ 3PM</span></span></td>
+          <td class='num'>11</td>
+          <td class='num'>0.879</td>
+          <td class='num'>0.590</td>
+          <td class='num prob-col'>52.7% · 86.2%</td>
+          <td class='num'>45.5%</td>
+          <td class='num'>45.4%</td>
+          <td class='num edge-1'><strong>1.00x</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>CLE</span></td>
+          <td class='legs-cell'><span class='leg'>Evan Mobley &nbsp;<span class='prop-tag'>10+ Reb</span></span><br><span class='leg'>Donovan Mitchell &nbsp;<span class='prop-tag'>8+ Ast</span></span></td>
+          <td class='num'>13</td>
+          <td class='num'>0.859</td>
+          <td class='num'>0.586</td>
+          <td class='num prob-col'>40.2% · 17.8%</td>
+          <td class='num'>7.7%</td>
+          <td class='num'>7.2%</td>
+          <td class='num edge-1'><strong>1.07x</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>OKC</span></td>
+          <td class='legs-cell'><span class='leg'>Isaiah Hartenstein &nbsp;<span class='prop-tag'>10+ Pts</span></span><br><span class='leg'>Chet Holmgren &nbsp;<span class='prop-tag'>10+ Pts</span></span></td>
+          <td class='num'>12</td>
+          <td class='num'>0.858</td>
+          <td class='num'>0.559</td>
+          <td class='num prob-col'>75.2% · 91.4%</td>
+          <td class='num'>75.0%</td>
+          <td class='num'>68.7%</td>
+          <td class='num edge-1'><strong>1.09x</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>BOS</span></td>
+          <td class='legs-cell'><span class='leg'>Payton Pritchard &nbsp;<span class='prop-tag'>4+ Ast</span></span><br><span class='leg'>Jaylen Brown &nbsp;<span class='prop-tag'>2+ 3PM</span></span></td>
+          <td class='num'>11</td>
+          <td class='num'>0.859</td>
+          <td class='num'>0.536</td>
+          <td class='num prob-col'>84.0% · 86.5%</td>
+          <td class='num'>72.7%</td>
+          <td class='num'>72.7%</td>
+          <td class='num edge-1'><strong>1.00x</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>NYK</span></td>
+          <td class='legs-cell'><span class='leg'>OG Anunoby &nbsp;<span class='prop-tag'>10+ Pts</span></span><br><span class='leg'>Mikal Bridges &nbsp;<span class='prop-tag'>15+ Pts</span></span><br><span class='leg'>Jalen Brunson &nbsp;<span class='prop-tag'>6+ Ast</span></span></td>
+          <td class='num'>11</td>
+          <td class='num'>0.914</td>
+          <td class='num'>0.503</td>
+          <td class='num prob-col'>90.7% · 71.5% · 83.9%</td>
+          <td class='num'>54.5%</td>
+          <td class='num'>54.4%</td>
+          <td class='num edge-1'><strong>1.00x</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>CLE</span></td>
+          <td class='legs-cell'><span class='leg'>Evan Mobley &nbsp;<span class='prop-tag'>8+ Reb</span></span><br><span class='leg'>Donovan Mitchell &nbsp;<span class='prop-tag'>6+ Reb</span></span></td>
+          <td class='num'>14</td>
+          <td class='num'>0.814</td>
+          <td class='num'>0.498</td>
+          <td class='num prob-col'>74.0% · 43.6%</td>
+          <td class='num'>35.7%</td>
+          <td class='num'>32.3%</td>
+          <td class='num edge-1'><strong>1.11x</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>BOS</span></td>
+          <td class='legs-cell'><span class='leg'>Payton Pritchard &nbsp;<span class='prop-tag'>4+ Reb</span></span><br><span class='leg'>Jaylen Brown &nbsp;<span class='prop-tag'>6+ Reb</span></span></td>
+          <td class='num'>11</td>
+          <td class='num'>0.845</td>
+          <td class='num'>0.496</td>
+          <td class='num prob-col'>61.0% · 66.2%</td>
+          <td class='num'>45.5%</td>
+          <td class='num'>40.4%</td>
+          <td class='num edge-1'><strong>1.13x</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>CLE</span></td>
+          <td class='legs-cell'><span class='leg'>Evan Mobley &nbsp;<span class='prop-tag'>8+ Reb</span></span><br><span class='leg'>Donovan Mitchell &nbsp;<span class='prop-tag'>4+ Reb</span></span></td>
+          <td class='num'>16</td>
+          <td class='num'>0.795</td>
+          <td class='num'>0.493</td>
+          <td class='num prob-col'>71.0% · 93.5%</td>
+          <td class='num'>68.8%</td>
+          <td class='num'>66.4%</td>
+          <td class='num edge-1'><strong>1.04x</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>SAS</span></td>
+          <td class='legs-cell'><span class='leg'>De'Aaron Fox &nbsp;<span class='prop-tag'>15+ Pts</span></span><br><span class='leg'>Stephon Castle &nbsp;<span class='prop-tag'>15+ Pts</span></span></td>
+          <td class='num'>14</td>
+          <td class='num'>0.807</td>
+          <td class='num'>0.484</td>
+          <td class='num prob-col'>78.4% · 92.4%</td>
+          <td class='num'>78.6%</td>
+          <td class='num'>72.5%</td>
+          <td class='num edge-1'><strong>1.08x</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>DET</span></td>
+          <td class='legs-cell'><span class='leg'>Cade Cunningham &nbsp;<span class='prop-tag'>2+ 3PM</span></span><br><span class='leg'>Tobias Harris &nbsp;<span class='prop-tag'>1+ 3PM</span></span></td>
+          <td class='num'>13</td>
+          <td class='num'>0.812</td>
+          <td class='num'>0.473</td>
+          <td class='num prob-col'>84.5% · 88.2%</td>
+          <td class='num'>76.9%</td>
+          <td class='num'>74.5%</td>
+          <td class='num edge-1'><strong>1.03x</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>NYK</span></td>
+          <td class='legs-cell'><span class='leg'>Mitchell Robinson &nbsp;<span class='prop-tag'>8+ Reb</span></span><br><span class='leg'>OG Anunoby &nbsp;<span class='prop-tag'>5+ 3PM</span></span></td>
+          <td class='num'>10</td>
+          <td class='num'>0.846</td>
+          <td class='num'>0.462</td>
+          <td class='num prob-col'>43.9% · 20.6%</td>
+          <td class='num'>10.0%</td>
+          <td class='num'>9.0%</td>
+          <td class='num edge-1'><strong>1.11x</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>PHI</span></td>
+          <td class='legs-cell'><span class='leg'>VJ Edgecombe &nbsp;<span class='prop-tag'>10+ Reb</span></span><br><span class='leg'>Tyrese Maxey &nbsp;<span class='prop-tag'>4+ 3PM</span></span></td>
+          <td class='num'>14</td>
+          <td class='num'>0.797</td>
+          <td class='num'>0.462</td>
+          <td class='num prob-col'>29.4% · 27.9%</td>
+          <td class='num'>14.3%</td>
+          <td class='num'>8.2%</td>
+          <td class='num edge-2'><strong>1.74x</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>CLE</span></td>
+          <td class='legs-cell'><span class='leg'>James Harden &nbsp;<span class='prop-tag'>5+ Reb</span></span><br><span class='leg'>Dennis Schröder &nbsp;<span class='prop-tag'>2+ Ast</span></span></td>
+          <td class='num'>13</td>
+          <td class='num'>0.806</td>
+          <td class='num'>0.460</td>
+          <td class='num prob-col'>78.6% · 77.0%</td>
+          <td class='num'>61.5%</td>
+          <td class='num'>60.5%</td>
+          <td class='num edge-1'><strong>1.02x</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>ORL</span></td>
+          <td class='legs-cell'><span class='leg'>Paolo Banchero &nbsp;<span class='prop-tag'>20+ Pts</span></span><br><span class='leg'>Jalen Suggs &nbsp;<span class='prop-tag'>2+ 3PM</span></span></td>
+          <td class='num'>12</td>
+          <td class='num'>0.813</td>
+          <td class='num'>0.449</td>
+          <td class='num prob-col'>79.1% · 83.2%</td>
+          <td class='num'>66.7%</td>
+          <td class='num'>65.8%</td>
+          <td class='num edge-1'><strong>1.01x</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>PHI</span></td>
+          <td class='legs-cell'><span class='leg'>VJ Edgecombe &nbsp;<span class='prop-tag'>10+ Reb</span></span><br><span class='leg'>Tyrese Maxey &nbsp;<span class='prop-tag'>6+ Ast</span></span><br><span class='leg'>Paul George &nbsp;<span class='prop-tag'>4+ Ast</span></span></td>
+          <td class='num'>12</td>
+          <td class='num'>0.881</td>
+          <td class='num'>0.430</td>
+          <td class='num prob-col'>33.2% · 78.8% · 44.2%</td>
+          <td class='num'>16.7%</td>
+          <td class='num'>11.5%</td>
+          <td class='num edge-1'><strong>1.44x</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>PHI</span></td>
+          <td class='legs-cell'><span class='leg'>VJ Edgecombe &nbsp;<span class='prop-tag'>10+ Reb</span></span><br><span class='leg'>Tyrese Maxey &nbsp;<span class='prop-tag'>6+ Ast</span></span></td>
+          <td class='num'>13</td>
+          <td class='num'>0.793</td>
+          <td class='num'>0.430</td>
+          <td class='num prob-col'>30.8% · 73.0%</td>
+          <td class='num'>23.1%</td>
+          <td class='num'>22.5%</td>
+          <td class='num edge-1'><strong>1.02x</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>ORL</span></td>
+          <td class='legs-cell'><span class='leg'>Wendell Carter Jr. &nbsp;<span class='prop-tag'>12+ Reb</span></span><br><span class='leg'>Paolo Banchero &nbsp;<span class='prop-tag'>12+ Reb</span></span></td>
+          <td class='num'>12</td>
+          <td class='num'>0.804</td>
+          <td class='num'>0.427</td>
+          <td class='num prob-col'>23.3% · 29.0%</td>
+          <td class='num'>8.3%</td>
+          <td class='num'>6.8%</td>
+          <td class='num edge-1'><strong>1.23x</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>NYK</span></td>
+          <td class='legs-cell'><span class='leg'>Karl-Anthony Towns &nbsp;<span class='prop-tag'>2+ 3PM</span></span><br><span class='leg'>Jalen Brunson &nbsp;<span class='prop-tag'>3+ 3PM</span></span></td>
+          <td class='num'>14</td>
+          <td class='num'>0.779</td>
+          <td class='num'>0.423</td>
+          <td class='num prob-col'>48.7% · 64.0%</td>
+          <td class='num'>35.7%</td>
+          <td class='num'>31.2%</td>
+          <td class='num edge-1'><strong>1.15x</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>ORL</span></td>
+          <td class='legs-cell'><span class='leg'>Paolo Banchero &nbsp;<span class='prop-tag'>20+ Pts</span></span><br><span class='leg'>Jalen Suggs &nbsp;<span class='prop-tag'>10+ Pts</span></span></td>
+          <td class='num'>11</td>
+          <td class='num'>0.815</td>
+          <td class='num'>0.420</td>
+          <td class='num prob-col'>77.3% · 85.0%</td>
+          <td class='num'>72.7%</td>
+          <td class='num'>65.7%</td>
+          <td class='num edge-1'><strong>1.11x</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>NYK</span></td>
+          <td class='legs-cell'><span class='leg'>Mikal Bridges &nbsp;<span class='prop-tag'>6+ Reb</span></span><br><span class='leg'>Karl-Anthony Towns &nbsp;<span class='prop-tag'>3+ 3PM</span></span></td>
+          <td class='num'>12</td>
+          <td class='num'>0.797</td>
+          <td class='num'>0.412</td>
+          <td class='num prob-col'>21.9% · 35.6%</td>
+          <td class='num'>8.3%</td>
+          <td class='num'>7.8%</td>
+          <td class='num edge-1'><strong>1.07x</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>PHI</span></td>
+          <td class='legs-cell'><span class='leg'>Paul George &nbsp;<span class='prop-tag'>4+ Reb</span></span><br><span class='leg'>Tyrese Maxey &nbsp;<span class='prop-tag'>1+ 3PM</span></span></td>
+          <td class='num'>15</td>
+          <td class='num'>0.759</td>
+          <td class='num'>0.404</td>
+          <td class='num prob-col'>88.2% · 92.6%</td>
+          <td class='num'>86.7%</td>
+          <td class='num'>81.7%</td>
+          <td class='num edge-1'><strong>1.06x</strong></td>
+          
+        </tr></tbody>
+      </table></div>
+    </section>
+
+    <section>
+      <h2>Most Practical</h2>
+      <p class='desc'>Sorted by Joint Hit % -- combinations that fire most often. Filter: edge &ge; 1.2x.</p>
+      <div class='table-wrap'>
+      <table>
+        <thead><tr>
+          <th>Team</th><th>Props</th>
+          <th title='Shared games'>n</th>
+          <th title='Max pairwise r'>r</th>
+          <th title='Fisher 95% CI lower'>CI lo</th>
+          <th title='Avg pregame implied prob per leg'>Avg Prob</th>
+          <th title='Observed joint hit rate'>Joint Hit %</th>
+          <th title='Expected under independence'>Indep %</th>
+          <th title='Joint / Indep'>Edge Ratio</th>
+          
+        </tr></thead>
+        <tbody>
+        <tr>
+          <td><span class='team-badge'>NYK</span></td>
+          <td class='legs-cell'><span class='leg'>Josh Hart &nbsp;<span class='prop-tag'>6+ Reb</span></span><br><span class='leg'>Mikal Bridges &nbsp;<span class='prop-tag'>1+ 3PM</span></span><br><span class='leg'>Karl-Anthony Towns &nbsp;<span class='prop-tag'>3+ 3PM</span></span></td>
+          <td class='num'>13</td>
+          <td class='num'>0.696</td>
+          <td class='num'>0.205</td>
+          <td class='num prob-col'>81.4% · 74.1% · 39.3%</td>
+          <td class='num'>30.8%</td>
+          <td class='num'>23.7%</td>
+          <td class='num edge-1'><strong>1.30x</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>PHI</span></td>
+          <td class='legs-cell'><span class='leg'>Tyrese Maxey &nbsp;<span class='prop-tag'>25+ Pts</span></span><br><span class='leg'>VJ Edgecombe &nbsp;<span class='prop-tag'>10+ Reb</span></span></td>
+          <td class='num'>12</td>
+          <td class='num'>0.736</td>
+          <td class='num'>0.281</td>
+          <td class='num prob-col'>61.4% · 33.7%</td>
+          <td class='num'>25.0%</td>
+          <td class='num'>20.7%</td>
+          <td class='num edge-1'><strong>1.21x</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>CLE</span></td>
+          <td class='legs-cell'><span class='leg'>Donovan Mitchell &nbsp;<span class='prop-tag'>30+ Pts</span></span><br><span class='leg'>James Harden &nbsp;<span class='prop-tag'>5+ 3PM</span></span></td>
+          <td class='num'>10</td>
+          <td class='num'>0.928</td>
+          <td class='num'>0.718</td>
+          <td class='num prob-col'>63.3% · 26.2%</td>
+          <td class='num'>20.0%</td>
+          <td class='num'>16.6%</td>
+          <td class='num edge-1'><strong>1.21x</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>PHI</span></td>
+          <td class='legs-cell'><span class='leg'>VJ Edgecombe &nbsp;<span class='prop-tag'>10+ Reb</span></span><br><span class='leg'>Tyrese Maxey &nbsp;<span class='prop-tag'>6+ Ast</span></span><br><span class='leg'>Paul George &nbsp;<span class='prop-tag'>4+ Ast</span></span></td>
+          <td class='num'>12</td>
+          <td class='num'>0.881</td>
+          <td class='num'>0.430</td>
+          <td class='num prob-col'>33.2% · 78.8% · 44.2%</td>
+          <td class='num'>16.7%</td>
+          <td class='num'>11.5%</td>
+          <td class='num edge-1'><strong>1.44x</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>NYK</span></td>
+          <td class='legs-cell'><span class='leg'>Karl-Anthony Towns &nbsp;<span class='prop-tag'>15+ Pts</span></span><br><span class='leg'>Jalen Brunson &nbsp;<span class='prop-tag'>10+ Ast</span></span><br><span class='leg'>Josh Hart &nbsp;<span class='prop-tag'>5+ 3PM</span></span></td>
+          <td class='num'>13</td>
+          <td class='num'>0.678</td>
+          <td class='num'>0.177</td>
+          <td class='num prob-col'>91.5% · 29.4% · 26.2%</td>
+          <td class='num'>15.4%</td>
+          <td class='num'>7.0%</td>
+          <td class='num edge-3'><strong>2.19x</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>PHI</span></td>
+          <td class='legs-cell'><span class='leg'>VJ Edgecombe &nbsp;<span class='prop-tag'>10+ Reb</span></span><br><span class='leg'>Tyrese Maxey &nbsp;<span class='prop-tag'>4+ 3PM</span></span></td>
+          <td class='num'>14</td>
+          <td class='num'>0.797</td>
+          <td class='num'>0.462</td>
+          <td class='num prob-col'>29.4% · 27.9%</td>
+          <td class='num'>14.3%</td>
+          <td class='num'>8.2%</td>
+          <td class='num edge-2'><strong>1.74x</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>NYK</span></td>
+          <td class='legs-cell'><span class='leg'>Jalen Brunson &nbsp;<span class='prop-tag'>10+ Ast</span></span><br><span class='leg'>Karl-Anthony Towns &nbsp;<span class='prop-tag'>1+ 3PM</span></span><br><span class='leg'>Josh Hart &nbsp;<span class='prop-tag'>5+ 3PM</span></span></td>
+          <td class='num'>14</td>
+          <td class='num'>0.808</td>
+          <td class='num'>0.177</td>
+          <td class='num prob-col'>28.6% · 92.1% · 24.6%</td>
+          <td class='num'>14.3%</td>
+          <td class='num'>6.5%</td>
+          <td class='num edge-3'><strong>2.20x</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>NYK</span></td>
+          <td class='legs-cell'><span class='leg'>Jalen Brunson &nbsp;<span class='prop-tag'>10+ Ast</span></span><br><span class='leg'>Josh Hart &nbsp;<span class='prop-tag'>5+ 3PM</span></span></td>
+          <td class='num'>15</td>
+          <td class='num'>0.632</td>
+          <td class='num'>0.177</td>
+          <td class='num prob-col'>27.7% · 23.3%</td>
+          <td class='num'>13.3%</td>
+          <td class='num'>6.5%</td>
+          <td class='num edge-3'><strong>2.07x</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>CLE</span></td>
+          <td class='legs-cell'><span class='leg'>James Harden &nbsp;<span class='prop-tag'>5+ Reb</span></span><br><span class='leg'>Evan Mobley &nbsp;<span class='prop-tag'>10+ Reb</span></span><br><span class='leg'>Donovan Mitchell &nbsp;<span class='prop-tag'>8+ Ast</span></span></td>
+          <td class='num'>10</td>
+          <td class='num'>0.897</td>
+          <td class='num'>0.352</td>
+          <td class='num prob-col'>77.1% · 39.2% · 19.9%</td>
+          <td class='num'>10.0%</td>
+          <td class='num'>6.0%</td>
+          <td class='num edge-2'><strong>1.66x</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>NYK</span></td>
+          <td class='legs-cell'><span class='leg'>Mikal Bridges &nbsp;<span class='prop-tag'>6+ Reb</span></span><br><span class='leg'>Jalen Brunson &nbsp;<span class='prop-tag'>4+ Reb</span></span><br><span class='leg'>Karl-Anthony Towns &nbsp;<span class='prop-tag'>3+ 3PM</span></span></td>
+          <td class='num'>11</td>
+          <td class='num'>0.839</td>
+          <td class='num'>0.168</td>
+          <td class='num prob-col'>22.5% · 44.8% · 36.5%</td>
+          <td class='num'>9.1%</td>
+          <td class='num'>3.7%</td>
+          <td class='num edge-3'><strong>2.46x</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>NYK</span></td>
+          <td class='legs-cell'><span class='leg'>Mikal Bridges &nbsp;<span class='prop-tag'>6+ Reb</span></span><br><span class='leg'>Josh Hart &nbsp;<span class='prop-tag'>6+ Reb</span></span><br><span class='leg'>Karl-Anthony Towns &nbsp;<span class='prop-tag'>3+ 3PM</span></span></td>
+          <td class='num'>11</td>
+          <td class='num'>0.813</td>
+          <td class='num'>0.286</td>
+          <td class='num prob-col'>22.7% · 78.2% · 36.9%</td>
+          <td class='num'>9.1%</td>
+          <td class='num'>6.6%</td>
+          <td class='num edge-1'><strong>1.39x</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>NYK</span></td>
+          <td class='legs-cell'><span class='leg'>Mikal Bridges &nbsp;<span class='prop-tag'>15+ Pts</span></span><br><span class='leg'>Karl-Anthony Towns &nbsp;<span class='prop-tag'>2+ 3PM</span></span><br><span class='leg'>Josh Hart &nbsp;<span class='prop-tag'>4+ 3PM</span></span></td>
+          <td class='num'>12</td>
+          <td class='num'>0.873</td>
+          <td class='num'>0.384</td>
+          <td class='num prob-col'>71.9% · 55.0% · 15.5%</td>
+          <td class='num'>8.3%</td>
+          <td class='num'>6.1%</td>
+          <td class='num edge-1'><strong>1.36x</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>ORL</span></td>
+          <td class='legs-cell'><span class='leg'>Wendell Carter Jr. &nbsp;<span class='prop-tag'>12+ Reb</span></span><br><span class='leg'>Paolo Banchero &nbsp;<span class='prop-tag'>12+ Reb</span></span></td>
+          <td class='num'>12</td>
+          <td class='num'>0.804</td>
+          <td class='num'>0.427</td>
+          <td class='num prob-col'>23.3% · 29.0%</td>
+          <td class='num'>8.3%</td>
+          <td class='num'>6.8%</td>
+          <td class='num edge-1'><strong>1.23x</strong></td>
+          
+        </tr></tbody>
+      </table></div>
+    </section>
+</body>
+</html>

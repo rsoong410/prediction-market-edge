@@ -1,0 +1,1321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MLB Parlay Correlations</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+       background: #0f1117; color: #e2e8f0; padding: 32px 24px; }
+h1 { font-size: 1.6rem; font-weight: 700; margin-bottom: 6px; color: #f8fafc; }
+.subtitle { color: #94a3b8; font-size: 0.875rem; margin-bottom: 40px; }
+section { margin-bottom: 52px; }
+h2 { font-size: 1.15rem; font-weight: 600; color: #f1f5f9;
+     border-left: 3px solid #3b82f6; padding-left: 12px; margin-bottom: 6px; }
+.desc { font-size: 0.8rem; color: #64748b; margin-bottom: 14px; padding-left: 15px; }
+.table-wrap { overflow-x: auto; border-radius: 8px; border: 1px solid #1e293b; }
+table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+thead th { background: #1e293b; color: #94a3b8; font-weight: 600;
+           padding: 10px 12px; text-align: left; white-space: nowrap;
+           border-bottom: 1px solid #334155; cursor: help; }
+tbody tr { border-bottom: 1px solid #1e293b; }
+tbody tr:hover { background: #1a2235; }
+td { padding: 9px 12px; vertical-align: middle; }
+.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.prob-col { color: #94a3b8; font-size: 0.78rem; }
+.legs-cell { line-height: 1.7; }
+.leg { display: block; }
+.prop-tag { background: #1e3a5f; color: #7dd3fc; border-radius: 4px;
+            padding: 1px 6px; font-size: 0.74rem; font-weight: 600;
+            white-space: nowrap; }
+.team-badge { background: #1e293b; color: #cbd5e1; border-radius: 4px;
+              padding: 3px 8px; font-size: 0.78rem; font-weight: 700;
+              letter-spacing: 0.05em; white-space: nowrap; }
+.edge-1 { color: #fbbf24; }
+.edge-2 { color: #fb923c; }
+.edge-3 { color: #f87171; }
+.edge-4 { color: #a78bfa; }
+.edge-5 { color: #34d399; }
+.legend { display: flex; gap: 18px; font-size: 0.78rem; margin-bottom: 32px; flex-wrap: wrap; }
+.legend-item { display: flex; align-items: center; gap: 6px; }
+.legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+.glossary { background: #1e293b; border-radius: 8px; padding: 18px 22px;
+            font-size: 0.8rem; color: #94a3b8; margin-bottom: 40px; }
+.glossary h3 { font-size: 0.85rem; color: #cbd5e1; margin-bottom: 10px; }
+.glossary dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; }
+.glossary dt { color: #7dd3fc; font-weight: 600; }
+</style>
+</head>
+<body>
+<h1>MLB Parlay Correlation Report</h1>
+<p class='subtitle'>2026 season · Kalshi market data · BH-FDR q=10% · in-sample estimates</p>
+
+<div class='glossary'>
+  <h3>Column guide</h3>
+  <dl>
+    <dt>n</dt><dd>Shared games — how many games both players had resolved markets</dd>
+    <dt>r</dt><dd>Pearson correlation of surprise (outcome − implied prob) series</dd>
+    <dt>CI lo</dt><dd>Fisher 95% CI lower bound on r — a conservative floor on the true correlation</dd>
+    <dt>Avg Prob</dt><dd>Average Kalshi pregame implied probability per leg (market's estimate)</dd>
+    <dt>Joint Hit %</dt><dd>Fraction of shared games where ALL legs hit — observed in-sample</dd>
+    <dt>Indep %</dt><dd>Product of Avg Probs — what joint hit rate would be if legs were independent</dd>
+    <dt>Edge Ratio</dt><dd>Joint Hit % ÷ Indep % — how much more likely than independence. Sportsbook parlays assume 1.0× (independence), so &gt;1.2× clears typical vig.</dd>
+  </dl>
+</div>
+
+<div class='legend'>
+  <span style='color:#94a3b8; font-size:0.78rem; align-self:center;'>Edge Ratio:</span>
+  <div class='legend-item'><div class='legend-dot' style='background:#fbbf24'></div><span class='edge-1'>1.2–1.5×</span></div>
+  <div class='legend-item'><div class='legend-dot' style='background:#fb923c'></div><span class='edge-2'>1.5–2×</span></div>
+  <div class='legend-item'><div class='legend-dot' style='background:#f87171'></div><span class='edge-3'>2–3×</span></div>
+  <div class='legend-item'><div class='legend-dot' style='background:#a78bfa'></div><span class='edge-4'>3–4×</span></div>
+  <div class='legend-item'><div class='legend-dot' style='background:#34d399'></div><span class='edge-5'>4×+</span></div>
+</div>
+
+    <section>
+      <h2>Best Credibility</h2>
+      <p class='desc'>Ranked by composite score: log(edge) × √n × CI-lower. Filters: r &lt; 0.95, n ≥ 8, p_joint &gt; 0, edge ≥ 1.2×.</p>
+      <div class='table-wrap'>
+      <table>
+        <thead>
+          <tr>
+            <th>Team</th>
+            <th>Props</th>
+            <th title="Shared games">n</th>
+            <th title="Max pairwise Pearson r on surprise series">r</th>
+            <th title="Fisher 95% CI lower bound on r">CI&nbsp;lo</th>
+            <th title="Average pregame implied probability per leg">Avg&nbsp;Prob</th>
+            <th title="Observed joint hit rate in shared games">Joint&nbsp;Hit&nbsp;%</th>
+            <th title="Expected joint if legs were independent">Indep&nbsp;%</th>
+            <th title="Joint Hit % / Indep % — how much more likely than independence">Edge&nbsp;Ratio</th>
+            <th>Score</th>
+          </tr>
+        </thead>
+        <tbody>
+          
+        <tr>
+          <td><span class='team-badge'>LAA</span></td>
+          <td class='legs-cell'><span class='leg'>Jo Adell &nbsp;<span class='prop-tag'>2+ HR</span></span><br><span class='leg'>Oswald Peraza &nbsp;<span class='prop-tag'>1+ HR</span></span></td>
+          <td class='num'>9</td>
+          <td class='num'>0.934</td>
+          <td class='num'>0.710</td>
+          <td class='num prob-col'>13.1% · 12.9%</td>
+          <td class='num'>11.1%</td>
+          <td class='num'>1.7%</td>
+          <td class='num edge-5'><strong>6.58×</strong></td>
+          <td>4.01</td>
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>NYY</span></td>
+          <td class='legs-cell'><span class='leg'>Austin Wells &nbsp;<span class='prop-tag'>2+ Hits</span></span><br><span class='leg'>Anthony Volpe &nbsp;<span class='prop-tag'>3+ Hits</span></span></td>
+          <td class='num'>8</td>
+          <td class='num'>0.926</td>
+          <td class='num'>0.636</td>
+          <td class='num prob-col'>14.1% · 14.5%</td>
+          <td class='num'>12.5%</td>
+          <td class='num'>2.1%</td>
+          <td class='num edge-5'><strong>6.10×</strong></td>
+          <td>3.25</td>
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>NYY</span></td>
+          <td class='legs-cell'><span class='leg'>Austin Wells &nbsp;<span class='prop-tag'>2+ Hits</span></span><br><span class='leg'>Cody Bellinger &nbsp;<span class='prop-tag'>4+ Total Bases</span></span></td>
+          <td class='num'>10</td>
+          <td class='num'>0.917</td>
+          <td class='num'>0.681</td>
+          <td class='num prob-col'>11.7% · 24.8%</td>
+          <td class='num'>10.0%</td>
+          <td class='num'>2.9%</td>
+          <td class='num edge-4'><strong>3.45×</strong></td>
+          <td>2.67</td>
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>DET</span></td>
+          <td class='legs-cell'><span class='leg'>Riley Greene &nbsp;<span class='prop-tag'>3+ Hits</span></span><br><span class='leg'>Dillon Dingler &nbsp;<span class='prop-tag'>3+ Hits</span></span></td>
+          <td class='num'>16</td>
+          <td class='num'>0.739</td>
+          <td class='num'>0.384</td>
+          <td class='num prob-col'>16.1% · 8.6%</td>
+          <td class='num'>6.2%</td>
+          <td class='num'>1.4%</td>
+          <td class='num edge-5'><strong>4.51×</strong></td>
+          <td>2.31</td>
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>MIA</span></td>
+          <td class='legs-cell'><span class='leg'>Joe Mack &nbsp;<span class='prop-tag'>1+ HR</span></span><br><span class='leg'>Otto Lopez &nbsp;<span class='prop-tag'>1+ HR</span></span></td>
+          <td class='num'>13</td>
+          <td class='num'>0.776</td>
+          <td class='num'>0.393</td>
+          <td class='num prob-col'>9.7% · 17.1%</td>
+          <td class='num'>7.7%</td>
+          <td class='num'>1.7%</td>
+          <td class='num edge-5'><strong>4.65×</strong></td>
+          <td>2.18</td>
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>SF</span></td>
+          <td class='legs-cell'><span class='leg'>Casey Schmitt &nbsp;<span class='prop-tag'>2+ HR</span></span><br><span class='leg'>Matt Chapman &nbsp;<span class='prop-tag'>2+ HR</span></span></td>
+          <td class='num'>9</td>
+          <td class='num'>0.833</td>
+          <td class='num'>0.379</td>
+          <td class='num prob-col'>14.0% · 14.3%</td>
+          <td class='num'>11.1%</td>
+          <td class='num'>2.0%</td>
+          <td class='num edge-5'><strong>5.54×</strong></td>
+          <td>1.95</td>
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>DET</span></td>
+          <td class='legs-cell'><span class='leg'>Kevin McGonigle &nbsp;<span class='prop-tag'>3+ Hits</span></span><br><span class='leg'>Colt Keith &nbsp;<span class='prop-tag'>2+ Hits</span></span></td>
+          <td class='num'>12</td>
+          <td class='num'>0.852</td>
+          <td class='num'>0.544</td>
+          <td class='num prob-col'>10.7% · 27.9%</td>
+          <td class='num'>8.3%</td>
+          <td class='num'>3.0%</td>
+          <td class='num edge-3'><strong>2.80×</strong></td>
+          <td>1.94</td>
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>NYY</span></td>
+          <td class='legs-cell'><span class='leg'>Jazz Chisholm Jr. &nbsp;<span class='prop-tag'>2+ Hits</span></span><br><span class='leg'>Cody Bellinger &nbsp;<span class='prop-tag'>5+ Total Bases</span></span></td>
+          <td class='num'>8</td>
+          <td class='num'>0.918</td>
+          <td class='num'>0.605</td>
+          <td class='num prob-col'>26.2% · 31.6%</td>
+          <td class='num'>25.0%</td>
+          <td class='num'>8.3%</td>
+          <td class='num edge-4'><strong>3.01×</strong></td>
+          <td>1.89</td>
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>MIL</span></td>
+          <td class='legs-cell'><span class='leg'>Garrett Mitchell &nbsp;<span class='prop-tag'>2+ Hits</span></span><br><span class='leg'>Christian Yelich &nbsp;<span class='prop-tag'>5+ H+R+RBI</span></span></td>
+          <td class='num'>8</td>
+          <td class='num'>0.927</td>
+          <td class='num'>0.639</td>
+          <td class='num prob-col'>26.2% · 33.9%</td>
+          <td class='num'>25.0%</td>
+          <td class='num'>8.9%</td>
+          <td class='num edge-3'><strong>2.81×</strong></td>
+          <td>1.87</td>
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>MIL</span></td>
+          <td class='legs-cell'><span class='leg'>Garrett Mitchell &nbsp;<span class='prop-tag'>2+ Hits</span></span><br><span class='leg'>Christian Yelich &nbsp;<span class='prop-tag'>2+ Hits</span></span></td>
+          <td class='num'>14</td>
+          <td class='num'>0.779</td>
+          <td class='num'>0.423</td>
+          <td class='num prob-col'>15.9% · 29.1%</td>
+          <td class='num'>14.3%</td>
+          <td class='num'>4.6%</td>
+          <td class='num edge-4'><strong>3.09×</strong></td>
+          <td>1.79</td>
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>TOR</span></td>
+          <td class='legs-cell'><span class='leg'>Daulton Varsho &nbsp;<span class='prop-tag'>2+ Hits</span></span><br><span class='leg'>Vladimir Guerrero Jr. &nbsp;<span class='prop-tag'>1+ HR</span></span></td>
+          <td class='num'>10</td>
+          <td class='num'>0.893</td>
+          <td class='num'>0.603</td>
+          <td class='num prob-col'>22.1% · 19.0%</td>
+          <td class='num'>10.0%</td>
+          <td class='num'>4.2%</td>
+          <td class='num edge-3'><strong>2.38×</strong></td>
+          <td>1.65</td>
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>WSH</span></td>
+          <td class='legs-cell'><span class='leg'>CJ Abrams &nbsp;<span class='prop-tag'>2+ Hits</span></span><br><span class='leg'>Luis García &nbsp;<span class='prop-tag'>1+ HR</span></span></td>
+          <td class='num'>12</td>
+          <td class='num'>0.816</td>
+          <td class='num'>0.457</td>
+          <td class='num prob-col'>34.3% · 26.2%</td>
+          <td class='num'>25.0%</td>
+          <td class='num'>9.0%</td>
+          <td class='num edge-3'><strong>2.77×</strong></td>
+          <td>1.61</td>
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>AZ</span></td>
+          <td class='legs-cell'><span class='leg'>Ketel Marte &nbsp;<span class='prop-tag'>3+ Hits</span></span><br><span class='leg'>Corbin Carroll &nbsp;<span class='prop-tag'>3+ Hits</span></span></td>
+          <td class='num'>19</td>
+          <td class='num'>0.670</td>
+          <td class='num'>0.310</td>
+          <td class='num prob-col'>20.2% · 8.1%</td>
+          <td class='num'>5.3%</td>
+          <td class='num'>1.6%</td>
+          <td class='num edge-4'><strong>3.22×</strong></td>
+          <td>1.58</td>
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>TOR</span></td>
+          <td class='legs-cell'><span class='leg'>Jesús Sánchez &nbsp;<span class='prop-tag'>2+ Hits</span></span><br><span class='leg'>Ernie Clement &nbsp;<span class='prop-tag'>1+ HR</span></span></td>
+          <td class='num'>12</td>
+          <td class='num'>0.938</td>
+          <td class='num'>0.789</td>
+          <td class='num prob-col'>35.4% · 27.4%</td>
+          <td class='num'>16.7%</td>
+          <td class='num'>9.7%</td>
+          <td class='num edge-2'><strong>1.72×</strong></td>
+          <td>1.48</td>
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>CLE</span></td>
+          <td class='legs-cell'><span class='leg'>Angel Martínez &nbsp;<span class='prop-tag'>1+ HR</span></span><br><span class='leg'>Daniel Schneemann &nbsp;<span class='prop-tag'>1+ HR</span></span></td>
+          <td class='num'>13</td>
+          <td class='num'>0.879</td>
+          <td class='num'>0.635</td>
+          <td class='num prob-col'>40.8% · 9.8%</td>
+          <td class='num'>7.7%</td>
+          <td class='num'>4.0%</td>
+          <td class='num edge-2'><strong>1.91×</strong></td>
+          <td>1.48</td>
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>KC</span></td>
+          <td class='legs-cell'><span class='leg'>Michael Massey &nbsp;<span class='prop-tag'>3+ Hits</span></span><br><span class='leg'>Jac Caglianone &nbsp;<span class='prop-tag'>2+ Hits</span></span></td>
+          <td class='num'>14</td>
+          <td class='num'>0.903</td>
+          <td class='num'>0.715</td>
+          <td class='num prob-col'>11.1% · 38.1%</td>
+          <td class='num'>7.1%</td>
+          <td class='num'>4.2%</td>
+          <td class='num edge-2'><strong>1.69×</strong></td>
+          <td>1.40</td>
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>BAL</span></td>
+          <td class='legs-cell'><span class='leg'>Adley Rutschman &nbsp;<span class='prop-tag'>3+ Hits</span></span><br><span class='leg'>Gunnar Henderson &nbsp;<span class='prop-tag'>4+ Total Bases</span></span></td>
+          <td class='num'>13</td>
+          <td class='num'>0.762</td>
+          <td class='num'>0.365</td>
+          <td class='num prob-col'>9.8% · 27.3%</td>
+          <td class='num'>7.7%</td>
+          <td class='num'>2.7%</td>
+          <td class='num edge-3'><strong>2.86×</strong></td>
+          <td>1.38</td>
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>SF</span></td>
+          <td class='legs-cell'><span class='leg'>Casey Schmitt &nbsp;<span class='prop-tag'>3+ Hits</span></span><br><span class='leg'>Rafael Devers &nbsp;<span class='prop-tag'>2+ Hits</span></span></td>
+          <td class='num'>16</td>
+          <td class='num'>0.879</td>
+          <td class='num'>0.680</td>
+          <td class='num prob-col'>28.2% · 40.1%</td>
+          <td class='num'>18.8%</td>
+          <td class='num'>11.3%</td>
+          <td class='num edge-2'><strong>1.66×</strong></td>
+          <td>1.38</td>
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>SF</span></td>
+          <td class='legs-cell'><span class='leg'>Willy Adames &nbsp;<span class='prop-tag'>2+ Hits</span></span><br><span class='leg'>Casey Schmitt &nbsp;<span class='prop-tag'>3+ Hits</span></span></td>
+          <td class='num'>17</td>
+          <td class='num'>0.914</td>
+          <td class='num'>0.772</td>
+          <td class='num prob-col'>43.6% · 26.6%</td>
+          <td class='num'>17.6%</td>
+          <td class='num'>11.6%</td>
+          <td class='num edge-2'><strong>1.52×</strong></td>
+          <td>1.33</td>
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>SF</span></td>
+          <td class='legs-cell'><span class='leg'>Matt Chapman &nbsp;<span class='prop-tag'>2+ Hits</span></span><br><span class='leg'>Willy Adames &nbsp;<span class='prop-tag'>2+ HR</span></span></td>
+          <td class='num'>10</td>
+          <td class='num'>0.942</td>
+          <td class='num'>0.768</td>
+          <td class='num prob-col'>42.4% · 13.6%</td>
+          <td class='num'>10.0%</td>
+          <td class='num'>5.8%</td>
+          <td class='num edge-2'><strong>1.73×</strong></td>
+          <td>1.33</td>
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>SF</span></td>
+          <td class='legs-cell'><span class='leg'>Willy Adames &nbsp;<span class='prop-tag'>1+ HR</span></span><br><span class='leg'>Matt Chapman &nbsp;<span class='prop-tag'>1+ HR</span></span></td>
+          <td class='num'>21</td>
+          <td class='num'>0.926</td>
+          <td class='num'>0.823</td>
+          <td class='num prob-col'>33.4% · 10.2%</td>
+          <td class='num'>4.8%</td>
+          <td class='num'>3.4%</td>
+          <td class='num edge-1'><strong>1.40×</strong></td>
+          <td>1.27</td>
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>MIL</span></td>
+          <td class='legs-cell'><span class='leg'>William Contreras &nbsp;<span class='prop-tag'>2+ Hits</span></span><br><span class='leg'>Christian Yelich &nbsp;<span class='prop-tag'>4+ Total Bases</span></span></td>
+          <td class='num'>11</td>
+          <td class='num'>0.869</td>
+          <td class='num'>0.563</td>
+          <td class='num prob-col'>37.3% · 37.9%</td>
+          <td class='num'>27.3%</td>
+          <td class='num'>14.1%</td>
+          <td class='num edge-2'><strong>1.93×</strong></td>
+          <td>1.23</td>
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>CHC</span></td>
+          <td class='legs-cell'><span class='leg'>Dansby Swanson &nbsp;<span class='prop-tag'>2+ Hits</span></span><br><span class='leg'>Nico Hoerner &nbsp;<span class='prop-tag'>3+ H+R+RBI</span></span></td>
+          <td class='num'>9</td>
+          <td class='num'>0.880</td>
+          <td class='num'>0.520</td>
+          <td class='num prob-col'>12.8% · 39.9%</td>
+          <td class='num'>11.1%</td>
+          <td class='num'>5.1%</td>
+          <td class='num edge-3'><strong>2.18×</strong></td>
+          <td>1.22</td>
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>COL</span></td>
+          <td class='legs-cell'><span class='leg'>T.J. Rumfield &nbsp;<span class='prop-tag'>2+ Hits</span></span><br><span class='leg'>Jake McCarthy &nbsp;<span class='prop-tag'>1+ HR</span></span></td>
+          <td class='num'>13</td>
+          <td class='num'>0.912</td>
+          <td class='num'>0.725</td>
+          <td class='num prob-col'>32.6% · 14.8%</td>
+          <td class='num'>7.7%</td>
+          <td class='num'>4.8%</td>
+          <td class='num edge-2'><strong>1.59×</strong></td>
+          <td>1.21</td>
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>DET</span></td>
+          <td class='legs-cell'><span class='leg'>Dillon Dingler &nbsp;<span class='prop-tag'>1+ HR</span></span><br><span class='leg'>Riley Greene &nbsp;<span class='prop-tag'>1+ HR</span></span></td>
+          <td class='num'>15</td>
+          <td class='num'>0.669</td>
+          <td class='num'>0.239</td>
+          <td class='num prob-col'>21.7% · 8.9%</td>
+          <td class='num'>6.7%</td>
+          <td class='num'>1.9%</td>
+          <td class='num edge-4'><strong>3.44×</strong></td>
+          <td>1.14</td>
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>TEX</span></td>
+          <td class='legs-cell'><span class='leg'>Alejandro Osuna &nbsp;<span class='prop-tag'>2+ Hits</span></span><br><span class='leg'>Brandon Nimmo &nbsp;<span class='prop-tag'>3+ H+R+RBI</span></span></td>
+          <td class='num'>9</td>
+          <td class='num'>0.884</td>
+          <td class='num'>0.532</td>
+          <td class='num prob-col'>12.8% · 42.7%</td>
+          <td class='num'>11.1%</td>
+          <td class='num'>5.5%</td>
+          <td class='num edge-3'><strong>2.04×</strong></td>
+          <td>1.14</td>
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>LAA</span></td>
+          <td class='legs-cell'><span class='leg'>Oswald Peraza &nbsp;<span class='prop-tag'>2+ Hits</span></span><br><span class='leg'>Mike Trout &nbsp;<span class='prop-tag'>5+ Total Bases</span></span></td>
+          <td class='num'>8</td>
+          <td class='num'>0.941</td>
+          <td class='num'>0.702</td>
+          <td class='num prob-col'>29.1% · 24.5%</td>
+          <td class='num'>12.5%</td>
+          <td class='num'>7.1%</td>
+          <td class='num edge-2'><strong>1.75×</strong></td>
+          <td>1.11</td>
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>AZ</span></td>
+          <td class='legs-cell'><span class='leg'>Gabriel Moreno &nbsp;<span class='prop-tag'>3+ Hits</span></span><br><span class='leg'>Geraldo Perdomo &nbsp;<span class='prop-tag'>3+ Total Bases</span></span></td>
+          <td class='num'>8</td>
+          <td class='num'>0.875</td>
+          <td class='num'>0.443</td>
+          <td class='num prob-col'>26.2% · 39.4%</td>
+          <td class='num'>25.0%</td>
+          <td class='num'>10.3%</td>
+          <td class='num edge-3'><strong>2.42×</strong></td>
+          <td>1.11</td>
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>NYM</span></td>
+          <td class='legs-cell'><span class='leg'>Marcus Semien &nbsp;<span class='prop-tag'>2+ Hits</span></span><br><span class='leg'>Juan Soto &nbsp;<span class='prop-tag'>4+ H+R+RBI</span></span></td>
+          <td class='num'>8</td>
+          <td class='num'>0.936</td>
+          <td class='num'>0.680</td>
+          <td class='num prob-col'>14.1% · 50.8%</td>
+          <td class='num'>12.5%</td>
+          <td class='num'>7.2%</td>
+          <td class='num edge-2'><strong>1.74×</strong></td>
+          <td>1.06</td>
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>CHC</span></td>
+          <td class='legs-cell'><span class='leg'>Ian Happ &nbsp;<span class='prop-tag'>2+ Hits</span></span><br><span class='leg'>Dansby Swanson &nbsp;<span class='prop-tag'>2+ H+R+RBI</span></span></td>
+          <td class='num'>8</td>
+          <td class='num'>0.944</td>
+          <td class='num'>0.713</td>
+          <td class='num prob-col'>26.2% · 57.4%</td>
+          <td class='num'>25.0%</td>
+          <td class='num'>15.1%</td>
+          <td class='num edge-2'><strong>1.66×</strong></td>
+          <td>1.02</td>
+        </tr>
+        </tbody>
+      </table>
+      </div>
+    </section>
+
+    <section>
+      <h2>Genuine Correlations</h2>
+      <p class='desc'>r &lt; 0.95 (not a binary-probability artifact), n ≥ 10, joint event actually occurred, edge ≥ 1.0×. Sorted by CI lower bound.</p>
+      <div class='table-wrap'>
+      <table>
+        <thead>
+          <tr>
+            <th>Team</th>
+            <th>Props</th>
+            <th title="Shared games">n</th>
+            <th title="Max pairwise Pearson r on surprise series">r</th>
+            <th title="Fisher 95% CI lower bound on r">CI&nbsp;lo</th>
+            <th title="Average pregame implied probability per leg">Avg&nbsp;Prob</th>
+            <th title="Observed joint hit rate in shared games">Joint&nbsp;Hit&nbsp;%</th>
+            <th title="Expected joint if legs were independent">Indep&nbsp;%</th>
+            <th title="Joint Hit % / Indep % — how much more likely than independence">Edge&nbsp;Ratio</th>
+            
+          </tr>
+        </thead>
+        <tbody>
+          
+        <tr>
+          <td><span class='team-badge'>SF</span></td>
+          <td class='legs-cell'><span class='leg'>Willy Adames &nbsp;<span class='prop-tag'>1+ HR</span></span><br><span class='leg'>Matt Chapman &nbsp;<span class='prop-tag'>1+ HR</span></span></td>
+          <td class='num'>21</td>
+          <td class='num'>0.926</td>
+          <td class='num'>0.823</td>
+          <td class='num prob-col'>33.4% · 10.2%</td>
+          <td class='num'>4.8%</td>
+          <td class='num'>3.4%</td>
+          <td class='num edge-1'><strong>1.40×</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>TOR</span></td>
+          <td class='legs-cell'><span class='leg'>Jesús Sánchez &nbsp;<span class='prop-tag'>2+ Hits</span></span><br><span class='leg'>Ernie Clement &nbsp;<span class='prop-tag'>1+ HR</span></span></td>
+          <td class='num'>12</td>
+          <td class='num'>0.938</td>
+          <td class='num'>0.789</td>
+          <td class='num prob-col'>35.4% · 27.4%</td>
+          <td class='num'>16.7%</td>
+          <td class='num'>9.7%</td>
+          <td class='num edge-2'><strong>1.72×</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>SF</span></td>
+          <td class='legs-cell'><span class='leg'>Willy Adames &nbsp;<span class='prop-tag'>2+ Hits</span></span><br><span class='leg'>Casey Schmitt &nbsp;<span class='prop-tag'>3+ Hits</span></span></td>
+          <td class='num'>17</td>
+          <td class='num'>0.914</td>
+          <td class='num'>0.772</td>
+          <td class='num prob-col'>43.6% · 26.6%</td>
+          <td class='num'>17.6%</td>
+          <td class='num'>11.6%</td>
+          <td class='num edge-2'><strong>1.52×</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>SF</span></td>
+          <td class='legs-cell'><span class='leg'>Matt Chapman &nbsp;<span class='prop-tag'>2+ Hits</span></span><br><span class='leg'>Willy Adames &nbsp;<span class='prop-tag'>2+ HR</span></span></td>
+          <td class='num'>10</td>
+          <td class='num'>0.942</td>
+          <td class='num'>0.768</td>
+          <td class='num prob-col'>42.4% · 13.6%</td>
+          <td class='num'>10.0%</td>
+          <td class='num'>5.8%</td>
+          <td class='num edge-2'><strong>1.73×</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>COL</span></td>
+          <td class='legs-cell'><span class='leg'>T.J. Rumfield &nbsp;<span class='prop-tag'>2+ Hits</span></span><br><span class='leg'>Jake McCarthy &nbsp;<span class='prop-tag'>1+ HR</span></span></td>
+          <td class='num'>13</td>
+          <td class='num'>0.912</td>
+          <td class='num'>0.725</td>
+          <td class='num prob-col'>32.6% · 14.8%</td>
+          <td class='num'>7.7%</td>
+          <td class='num'>4.8%</td>
+          <td class='num edge-2'><strong>1.59×</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>KC</span></td>
+          <td class='legs-cell'><span class='leg'>Michael Massey &nbsp;<span class='prop-tag'>3+ Hits</span></span><br><span class='leg'>Jac Caglianone &nbsp;<span class='prop-tag'>2+ Hits</span></span></td>
+          <td class='num'>14</td>
+          <td class='num'>0.903</td>
+          <td class='num'>0.715</td>
+          <td class='num prob-col'>11.1% · 38.1%</td>
+          <td class='num'>7.1%</td>
+          <td class='num'>4.2%</td>
+          <td class='num edge-2'><strong>1.69×</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>COL</span></td>
+          <td class='legs-cell'><span class='leg'>Willi Castro &nbsp;<span class='prop-tag'>1+ Hits</span></span><br><span class='leg'>Jake McCarthy &nbsp;<span class='prop-tag'>1+ Hits</span></span></td>
+          <td class='num'>10</td>
+          <td class='num'>0.923</td>
+          <td class='num'>0.700</td>
+          <td class='num prob-col'>89.4% · 92.3%</td>
+          <td class='num'>90.0%</td>
+          <td class='num'>82.5%</td>
+          <td class='num edge-1'><strong>1.09×</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>BAL</span></td>
+          <td class='legs-cell'><span class='leg'>Pete Alonso &nbsp;<span class='prop-tag'>2+ H+R+RBI</span></span><br><span class='leg'>Adley Rutschman &nbsp;<span class='prop-tag'>1+ H+R+RBI</span></span></td>
+          <td class='num'>10</td>
+          <td class='num'>0.920</td>
+          <td class='num'>0.689</td>
+          <td class='num prob-col'>77.1% · 96.1%</td>
+          <td class='num'>80.0%</td>
+          <td class='num'>74.1%</td>
+          <td class='num edge-1'><strong>1.08×</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>NYY</span></td>
+          <td class='legs-cell'><span class='leg'>Austin Wells &nbsp;<span class='prop-tag'>2+ Hits</span></span><br><span class='leg'>Cody Bellinger &nbsp;<span class='prop-tag'>4+ Total Bases</span></span></td>
+          <td class='num'>10</td>
+          <td class='num'>0.917</td>
+          <td class='num'>0.681</td>
+          <td class='num prob-col'>11.7% · 24.8%</td>
+          <td class='num'>10.0%</td>
+          <td class='num'>2.9%</td>
+          <td class='num edge-4'><strong>3.45×</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>SF</span></td>
+          <td class='legs-cell'><span class='leg'>Casey Schmitt &nbsp;<span class='prop-tag'>3+ Hits</span></span><br><span class='leg'>Rafael Devers &nbsp;<span class='prop-tag'>2+ Hits</span></span></td>
+          <td class='num'>16</td>
+          <td class='num'>0.879</td>
+          <td class='num'>0.680</td>
+          <td class='num prob-col'>28.2% · 40.1%</td>
+          <td class='num'>18.8%</td>
+          <td class='num'>11.3%</td>
+          <td class='num edge-2'><strong>1.66×</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>SEA</span></td>
+          <td class='legs-cell'><span class='leg'>Cole Young &nbsp;<span class='prop-tag'>2+ Hits</span></span><br><span class='leg'>Colt Emerson &nbsp;<span class='prop-tag'>4+ Total Bases</span></span></td>
+          <td class='num'>12</td>
+          <td class='num'>0.899</td>
+          <td class='num'>0.672</td>
+          <td class='num prob-col'>19.8% · 58.5%</td>
+          <td class='num'>16.7%</td>
+          <td class='num'>11.6%</td>
+          <td class='num edge-1'><strong>1.44×</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>DET</span></td>
+          <td class='legs-cell'><span class='leg'>Kevin McGonigle &nbsp;<span class='prop-tag'>2+ Hits</span></span><br><span class='leg'>Colt Keith &nbsp;<span class='prop-tag'>1+ Hits</span></span></td>
+          <td class='num'>12</td>
+          <td class='num'>0.899</td>
+          <td class='num'>0.672</td>
+          <td class='num prob-col'>29.8% · 79.8%</td>
+          <td class='num'>25.0%</td>
+          <td class='num'>23.8%</td>
+          <td class='num edge-1'><strong>1.05×</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>KC</span></td>
+          <td class='legs-cell'><span class='leg'>Isaac Collins &nbsp;<span class='prop-tag'>2+ Hits</span></span><br><span class='leg'>Jac Caglianone &nbsp;<span class='prop-tag'>1+ Hits</span></span></td>
+          <td class='num'>11</td>
+          <td class='num'>0.904</td>
+          <td class='num'>0.664</td>
+          <td class='num prob-col'>8.7% · 98.8%</td>
+          <td class='num'>9.1%</td>
+          <td class='num'>8.6%</td>
+          <td class='num edge-1'><strong>1.05×</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>CLE</span></td>
+          <td class='legs-cell'><span class='leg'>Angel Martínez &nbsp;<span class='prop-tag'>1+ HR</span></span><br><span class='leg'>Daniel Schneemann &nbsp;<span class='prop-tag'>1+ HR</span></span></td>
+          <td class='num'>13</td>
+          <td class='num'>0.879</td>
+          <td class='num'>0.635</td>
+          <td class='num prob-col'>40.8% · 9.8%</td>
+          <td class='num'>7.7%</td>
+          <td class='num'>4.0%</td>
+          <td class='num edge-2'><strong>1.91×</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>KC</span></td>
+          <td class='legs-cell'><span class='leg'>Isaac Collins &nbsp;<span class='prop-tag'>2+ Hits</span></span><br><span class='leg'>Kyle Isbel &nbsp;<span class='prop-tag'>1+ Hits</span></span></td>
+          <td class='num'>10</td>
+          <td class='num'>0.900</td>
+          <td class='num'>0.625</td>
+          <td class='num prob-col'>19.1% · 96.0%</td>
+          <td class='num'>20.0%</td>
+          <td class='num'>18.3%</td>
+          <td class='num edge-1'><strong>1.09×</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>CHC</span></td>
+          <td class='legs-cell'><span class='leg'>Alex Bregman &nbsp;<span class='prop-tag'>1+ Hits</span></span><br><span class='leg'>Pete Crow-Armstrong &nbsp;<span class='prop-tag'>1+ HR</span></span></td>
+          <td class='num'>11</td>
+          <td class='num'>0.886</td>
+          <td class='num'>0.610</td>
+          <td class='num prob-col'>90.2% · 46.8%</td>
+          <td class='num'>45.5%</td>
+          <td class='num'>42.2%</td>
+          <td class='num edge-1'><strong>1.08×</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>TOR</span></td>
+          <td class='legs-cell'><span class='leg'>Daulton Varsho &nbsp;<span class='prop-tag'>2+ Hits</span></span><br><span class='leg'>Vladimir Guerrero Jr. &nbsp;<span class='prop-tag'>1+ HR</span></span></td>
+          <td class='num'>10</td>
+          <td class='num'>0.893</td>
+          <td class='num'>0.603</td>
+          <td class='num prob-col'>22.1% · 19.0%</td>
+          <td class='num'>10.0%</td>
+          <td class='num'>4.2%</td>
+          <td class='num edge-3'><strong>2.38×</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>DET</span></td>
+          <td class='legs-cell'><span class='leg'>Kevin McGonigle &nbsp;<span class='prop-tag'>1+ Hits</span></span><br><span class='leg'>Dillon Dingler &nbsp;<span class='prop-tag'>1+ Hits</span></span></td>
+          <td class='num'>11</td>
+          <td class='num'>0.881</td>
+          <td class='num'>0.595</td>
+          <td class='num prob-col'>73.0% · 91.6%</td>
+          <td class='num'>72.7%</td>
+          <td class='num'>66.9%</td>
+          <td class='num edge-1'><strong>1.09×</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>AZ</span></td>
+          <td class='legs-cell'><span class='leg'>Ketel Marte &nbsp;<span class='prop-tag'>2+ Hits</span></span><br><span class='leg'>Geraldo Perdomo &nbsp;<span class='prop-tag'>1+ Hits</span></span></td>
+          <td class='num'>13</td>
+          <td class='num'>0.859</td>
+          <td class='num'>0.585</td>
+          <td class='num prob-col'>50.2% · 88.4%</td>
+          <td class='num'>46.2%</td>
+          <td class='num'>44.3%</td>
+          <td class='num edge-1'><strong>1.04×</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>TEX</span></td>
+          <td class='legs-cell'><span class='leg'>Jake Burger &nbsp;<span class='prop-tag'>2+ Hits</span></span><br><span class='leg'>Joc Pederson &nbsp;<span class='prop-tag'>3+ H+R+RBI</span></span></td>
+          <td class='num'>10</td>
+          <td class='num'>0.881</td>
+          <td class='num'>0.564</td>
+          <td class='num prob-col'>11.7% · 55.9%</td>
+          <td class='num'>10.0%</td>
+          <td class='num'>6.5%</td>
+          <td class='num edge-2'><strong>1.53×</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>MIL</span></td>
+          <td class='legs-cell'><span class='leg'>William Contreras &nbsp;<span class='prop-tag'>2+ Hits</span></span><br><span class='leg'>Christian Yelich &nbsp;<span class='prop-tag'>4+ Total Bases</span></span></td>
+          <td class='num'>11</td>
+          <td class='num'>0.869</td>
+          <td class='num'>0.563</td>
+          <td class='num prob-col'>37.3% · 37.9%</td>
+          <td class='num'>27.3%</td>
+          <td class='num'>14.1%</td>
+          <td class='num edge-2'><strong>1.93×</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>PHI</span></td>
+          <td class='legs-cell'><span class='leg'>J.T. Realmuto &nbsp;<span class='prop-tag'>1+ HR</span></span><br><span class='leg'>Brandon Marsh &nbsp;<span class='prop-tag'>2+ Total Bases</span></span></td>
+          <td class='num'>10</td>
+          <td class='num'>0.877</td>
+          <td class='num'>0.552</td>
+          <td class='num prob-col'>24.2% · 75.8%</td>
+          <td class='num'>20.0%</td>
+          <td class='num'>18.3%</td>
+          <td class='num edge-1'><strong>1.09×</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>DET</span></td>
+          <td class='legs-cell'><span class='leg'>Kevin McGonigle &nbsp;<span class='prop-tag'>3+ Hits</span></span><br><span class='leg'>Colt Keith &nbsp;<span class='prop-tag'>2+ Hits</span></span></td>
+          <td class='num'>12</td>
+          <td class='num'>0.852</td>
+          <td class='num'>0.544</td>
+          <td class='num prob-col'>10.7% · 27.9%</td>
+          <td class='num'>8.3%</td>
+          <td class='num'>3.0%</td>
+          <td class='num edge-3'><strong>2.80×</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>CHC</span></td>
+          <td class='legs-cell'><span class='leg'>Ian Happ &nbsp;<span class='prop-tag'>2+ Total Bases</span></span><br><span class='leg'>Pete Crow-Armstrong &nbsp;<span class='prop-tag'>2+ Total Bases</span></span></td>
+          <td class='num'>14</td>
+          <td class='num'>0.832</td>
+          <td class='num'>0.540</td>
+          <td class='num prob-col'>63.8% · 65.8%</td>
+          <td class='num'>42.9%</td>
+          <td class='num'>42.0%</td>
+          <td class='num edge-1'><strong>1.02×</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>SEA</span></td>
+          <td class='legs-cell'><span class='leg'>Cole Young &nbsp;<span class='prop-tag'>2+ Hits</span></span><br><span class='leg'>Julio Rodríguez &nbsp;<span class='prop-tag'>5+ H+R+RBI</span></span></td>
+          <td class='num'>13</td>
+          <td class='num'>0.839</td>
+          <td class='num'>0.537</td>
+          <td class='num prob-col'>18.5% · 37.8%</td>
+          <td class='num'>7.7%</td>
+          <td class='num'>7.0%</td>
+          <td class='num edge-1'><strong>1.10×</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>MIN</span></td>
+          <td class='legs-cell'><span class='leg'>Victor Caratini &nbsp;<span class='prop-tag'>1+ HR</span></span><br><span class='leg'>Kody Clemens &nbsp;<span class='prop-tag'>1+ HR</span></span></td>
+          <td class='num'>14</td>
+          <td class='num'>0.826</td>
+          <td class='num'>0.525</td>
+          <td class='num prob-col'>20.2% · 23.9%</td>
+          <td class='num'>7.1%</td>
+          <td class='num'>4.8%</td>
+          <td class='num edge-1'><strong>1.48×</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>MIN</span></td>
+          <td class='legs-cell'><span class='leg'>Victor Caratini &nbsp;<span class='prop-tag'>2+ Hits</span></span><br><span class='leg'>Kody Clemens &nbsp;<span class='prop-tag'>2+ Hits</span></span></td>
+          <td class='num'>13</td>
+          <td class='num'>0.833</td>
+          <td class='num'>0.522</td>
+          <td class='num prob-col'>17.5% · 40.5%</td>
+          <td class='num'>7.7%</td>
+          <td class='num'>7.1%</td>
+          <td class='num edge-1'><strong>1.09×</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>SF</span></td>
+          <td class='legs-cell'><span class='leg'>Bryce Eldridge &nbsp;<span class='prop-tag'>2+ Hits</span></span><br><span class='leg'>Casey Schmitt &nbsp;<span class='prop-tag'>2+ H+R+RBI</span></span></td>
+          <td class='num'>13</td>
+          <td class='num'>0.828</td>
+          <td class='num'>0.509</td>
+          <td class='num prob-col'>31.8% · 69.4%</td>
+          <td class='num'>30.8%</td>
+          <td class='num'>22.1%</td>
+          <td class='num edge-1'><strong>1.39×</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>SF</span></td>
+          <td class='legs-cell'><span class='leg'>Willy Adames &nbsp;<span class='prop-tag'>3+ H+R+RBI</span></span><br><span class='leg'>Luis Arraez &nbsp;<span class='prop-tag'>3+ Total Bases</span></span></td>
+          <td class='num'>10</td>
+          <td class='num'>0.854</td>
+          <td class='num'>0.486</td>
+          <td class='num prob-col'>72.4% · 64.3%</td>
+          <td class='num'>50.0%</td>
+          <td class='num'>46.6%</td>
+          <td class='num edge-1'><strong>1.07×</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>NYY</span></td>
+          <td class='legs-cell'><span class='leg'>Jazz Chisholm Jr. &nbsp;<span class='prop-tag'>3+ Hits</span></span><br><span class='leg'>Ben Rice &nbsp;<span class='prop-tag'>3+ Hits</span></span></td>
+          <td class='num'>11</td>
+          <td class='num'>0.840</td>
+          <td class='num'>0.484</td>
+          <td class='num prob-col'>22.3% · 30.2%</td>
+          <td class='num'>9.1%</td>
+          <td class='num'>6.7%</td>
+          <td class='num edge-1'><strong>1.35×</strong></td>
+          
+        </tr>
+        </tbody>
+      </table>
+      </div>
+    </section>
+
+    <section>
+      <h2>Most Practical</h2>
+      <p class='desc'>Sorted by Joint Hit % — combinations that fire most often. Filter: edge ≥ 1.2×. Higher frequency = more betting opportunities.</p>
+      <div class='table-wrap'>
+      <table>
+        <thead>
+          <tr>
+            <th>Team</th>
+            <th>Props</th>
+            <th title="Shared games">n</th>
+            <th title="Max pairwise Pearson r on surprise series">r</th>
+            <th title="Fisher 95% CI lower bound on r">CI&nbsp;lo</th>
+            <th title="Average pregame implied probability per leg">Avg&nbsp;Prob</th>
+            <th title="Observed joint hit rate in shared games">Joint&nbsp;Hit&nbsp;%</th>
+            <th title="Expected joint if legs were independent">Indep&nbsp;%</th>
+            <th title="Joint Hit % / Indep % — how much more likely than independence">Edge&nbsp;Ratio</th>
+            
+          </tr>
+        </thead>
+        <tbody>
+          
+        <tr>
+          <td><span class='team-badge'>LAD</span></td>
+          <td class='legs-cell'><span class='leg'>Andy Pages &nbsp;<span class='prop-tag'>1+ H+R+RBI</span></span><br><span class='leg'>Freddie Freeman &nbsp;<span class='prop-tag'>1+ H+R+RBI</span></span><br><span class='leg'>Mookie Betts &nbsp;<span class='prop-tag'>1+ H+R+RBI</span></span></td>
+          <td class='num'>9</td>
+          <td class='num'>1.000</td>
+          <td class='num'>1.000</td>
+          <td class='num prob-col'>88.3% · 88.3% · 88.3%</td>
+          <td class='num'>88.9%</td>
+          <td class='num'>68.9%</td>
+          <td class='num edge-1'><strong>1.29×</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>SF</span></td>
+          <td class='legs-cell'><span class='leg'>Casey Schmitt &nbsp;<span class='prop-tag'>1+ HR</span></span><br><span class='leg'>Rafael Devers &nbsp;<span class='prop-tag'>2+ H+R+RBI</span></span></td>
+          <td class='num'>8</td>
+          <td class='num'>0.987</td>
+          <td class='num'>0.925</td>
+          <td class='num prob-col'>63.9% · 76.1%</td>
+          <td class='num'>62.5%</td>
+          <td class='num'>48.6%</td>
+          <td class='num edge-1'><strong>1.29×</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>COL</span></td>
+          <td class='legs-cell'><span class='leg'>Jake McCarthy &nbsp;<span class='prop-tag'>2+ Total Bases</span></span><br><span class='leg'>Hunter Goodman &nbsp;<span class='prop-tag'>4+ Total Bases</span></span></td>
+          <td class='num'>8</td>
+          <td class='num'>0.975</td>
+          <td class='num'>0.865</td>
+          <td class='num prob-col'>75.1% · 68.0%</td>
+          <td class='num'>62.5%</td>
+          <td class='num'>51.1%</td>
+          <td class='num edge-1'><strong>1.22×</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>COL</span></td>
+          <td class='legs-cell'><span class='leg'>Jake McCarthy &nbsp;<span class='prop-tag'>2+ Hits</span></span><br><span class='leg'>Hunter Goodman &nbsp;<span class='prop-tag'>4+ Total Bases</span></span></td>
+          <td class='num'>8</td>
+          <td class='num'>0.947</td>
+          <td class='num'>0.729</td>
+          <td class='num prob-col'>62.6% · 68.0%</td>
+          <td class='num'>62.5%</td>
+          <td class='num'>42.6%</td>
+          <td class='num edge-1'><strong>1.47×</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>SF</span></td>
+          <td class='legs-cell'><span class='leg'>Luis Arraez &nbsp;<span class='prop-tag'>2+ Hits</span></span><br><span class='leg'>Bryce Eldridge &nbsp;<span class='prop-tag'>3+ H+R+RBI</span></span></td>
+          <td class='num'>9</td>
+          <td class='num'>0.800</td>
+          <td class='num'>0.289</td>
+          <td class='num prob-col'>45.1% · 67.3%</td>
+          <td class='num'>44.4%</td>
+          <td class='num'>30.4%</td>
+          <td class='num edge-1'><strong>1.46×</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>SF</span></td>
+          <td class='legs-cell'><span class='leg'>Casey Schmitt &nbsp;<span class='prop-tag'>2+ Hits</span></span><br><span class='leg'>Bryce Eldridge &nbsp;<span class='prop-tag'>3+ H+R+RBI</span></span></td>
+          <td class='num'>9</td>
+          <td class='num'>0.800</td>
+          <td class='num'>0.289</td>
+          <td class='num prob-col'>45.1% · 67.3%</td>
+          <td class='num'>44.4%</td>
+          <td class='num'>30.4%</td>
+          <td class='num edge-1'><strong>1.46×</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>SF</span></td>
+          <td class='legs-cell'><span class='leg'>Casey Schmitt &nbsp;<span class='prop-tag'>2+ H+R+RBI</span></span><br><span class='leg'>Bryce Eldridge &nbsp;<span class='prop-tag'>3+ H+R+RBI</span></span><br><span class='leg'>Willy Adames &nbsp;<span class='prop-tag'>2+ Total Bases</span></span></td>
+          <td class='num'>9</td>
+          <td class='num'>0.836</td>
+          <td class='num'>0.382</td>
+          <td class='num prob-col'>71.6% · 67.3% · 61.7%</td>
+          <td class='num'>44.4%</td>
+          <td class='num'>29.7%</td>
+          <td class='num edge-2'><strong>1.50×</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>SF</span></td>
+          <td class='legs-cell'><span class='leg'>Casey Schmitt &nbsp;<span class='prop-tag'>2+ Hits</span></span><br><span class='leg'>Bryce Eldridge &nbsp;<span class='prop-tag'>3+ H+R+RBI</span></span><br><span class='leg'>Willy Adames &nbsp;<span class='prop-tag'>2+ Total Bases</span></span></td>
+          <td class='num'>9</td>
+          <td class='num'>0.834</td>
+          <td class='num'>0.189</td>
+          <td class='num prob-col'>45.1% · 67.3% · 61.7%</td>
+          <td class='num'>44.4%</td>
+          <td class='num'>18.7%</td>
+          <td class='num edge-3'><strong>2.37×</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>SF</span></td>
+          <td class='legs-cell'><span class='leg'>Casey Schmitt &nbsp;<span class='prop-tag'>2+ Hits</span></span><br><span class='leg'>Willy Adames &nbsp;<span class='prop-tag'>2+ Total Bases</span></span></td>
+          <td class='num'>17</td>
+          <td class='num'>0.614</td>
+          <td class='num'>0.189</td>
+          <td class='num prob-col'>41.9% · 75.6%</td>
+          <td class='num'>41.2%</td>
+          <td class='num'>31.7%</td>
+          <td class='num edge-1'><strong>1.30×</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>SF</span></td>
+          <td class='legs-cell'><span class='leg'>Casey Schmitt &nbsp;<span class='prop-tag'>2+ Hits</span></span><br><span class='leg'>Luis Arraez &nbsp;<span class='prop-tag'>2+ H+R+RBI</span></span><br><span class='leg'>Willy Adames &nbsp;<span class='prop-tag'>3+ Total Bases</span></span></td>
+          <td class='num'>10</td>
+          <td class='num'>0.834</td>
+          <td class='num'>0.212</td>
+          <td class='num prob-col'>50.0% · 84.6% · 69.8%</td>
+          <td class='num'>40.0%</td>
+          <td class='num'>29.5%</td>
+          <td class='num edge-1'><strong>1.35×</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>SF</span></td>
+          <td class='legs-cell'><span class='leg'>Bryce Eldridge &nbsp;<span class='prop-tag'>2+ Hits</span></span><br><span class='leg'>Willy Adames &nbsp;<span class='prop-tag'>2+ Total Bases</span></span></td>
+          <td class='num'>13</td>
+          <td class='num'>0.726</td>
+          <td class='num'>0.292</td>
+          <td class='num prob-col'>39.3% · 68.5%</td>
+          <td class='num'>38.5%</td>
+          <td class='num'>26.9%</td>
+          <td class='num edge-1'><strong>1.43×</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>SF</span></td>
+          <td class='legs-cell'><span class='leg'>Willy Adames &nbsp;<span class='prop-tag'>3+ H+R+RBI</span></span><br><span class='leg'>Casey Schmitt &nbsp;<span class='prop-tag'>3+ H+R+RBI</span></span><br><span class='leg'>Luis Arraez &nbsp;<span class='prop-tag'>3+ Total Bases</span></span></td>
+          <td class='num'>8</td>
+          <td class='num'>0.870</td>
+          <td class='num'>0.381</td>
+          <td class='num prob-col'>74.9% · 58.0% · 66.4%</td>
+          <td class='num'>37.5%</td>
+          <td class='num'>28.8%</td>
+          <td class='num edge-1'><strong>1.30×</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>WSH</span></td>
+          <td class='legs-cell'><span class='leg'>Luis García &nbsp;<span class='prop-tag'>1+ HR</span></span><br><span class='leg'>James Wood &nbsp;<span class='prop-tag'>3+ H+R+RBI</span></span></td>
+          <td class='num'>8</td>
+          <td class='num'>0.996</td>
+          <td class='num'>0.978</td>
+          <td class='num prob-col'>38.4% · 60.1%</td>
+          <td class='num'>37.5%</td>
+          <td class='num'>23.1%</td>
+          <td class='num edge-2'><strong>1.63×</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>CLE</span></td>
+          <td class='legs-cell'><span class='leg'>Kyle Manzardo &nbsp;<span class='prop-tag'>1+ HR</span></span><br><span class='leg'>José Ramírez &nbsp;<span class='prop-tag'>3+ Total Bases</span></span></td>
+          <td class='num'>8</td>
+          <td class='num'>0.969</td>
+          <td class='num'>0.835</td>
+          <td class='num prob-col'>38.4% · 55.1%</td>
+          <td class='num'>37.5%</td>
+          <td class='num'>21.1%</td>
+          <td class='num edge-2'><strong>1.77×</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>SF</span></td>
+          <td class='legs-cell'><span class='leg'>Bryce Eldridge &nbsp;<span class='prop-tag'>2+ Hits</span></span><br><span class='leg'>Casey Schmitt &nbsp;<span class='prop-tag'>2+ H+R+RBI</span></span><br><span class='leg'>Willy Adames &nbsp;<span class='prop-tag'>2+ Total Bases</span></span></td>
+          <td class='num'>11</td>
+          <td class='num'>0.828</td>
+          <td class='num'>0.292</td>
+          <td class='num prob-col'>37.3% · 72.3% · 68.5%</td>
+          <td class='num'>36.4%</td>
+          <td class='num'>18.4%</td>
+          <td class='num edge-2'><strong>1.97×</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>CLE</span></td>
+          <td class='legs-cell'><span class='leg'>Brayan Rocchio &nbsp;<span class='prop-tag'>3+ H+R+RBI</span></span><br><span class='leg'>José Ramírez &nbsp;<span class='prop-tag'>3+ H+R+RBI</span></span></td>
+          <td class='num'>11</td>
+          <td class='num'>0.961</td>
+          <td class='num'>0.851</td>
+          <td class='num prob-col'>43.4% · 51.2%</td>
+          <td class='num'>36.4%</td>
+          <td class='num'>22.2%</td>
+          <td class='num edge-2'><strong>1.64×</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>SD</span></td>
+          <td class='legs-cell'><span class='leg'>Xander Bogaerts &nbsp;<span class='prop-tag'>2+ H+R+RBI</span></span><br><span class='leg'>Fernando Tatis Jr. &nbsp;<span class='prop-tag'>3+ Total Bases</span></span></td>
+          <td class='num'>9</td>
+          <td class='num'>0.896</td>
+          <td class='num'>0.573</td>
+          <td class='num prob-col'>55.6% · 47.9%</td>
+          <td class='num'>33.3%</td>
+          <td class='num'>26.6%</td>
+          <td class='num edge-1'><strong>1.25×</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>SF</span></td>
+          <td class='legs-cell'><span class='leg'>Luis Arraez &nbsp;<span class='prop-tag'>2+ Hits</span></span><br><span class='leg'>Casey Schmitt &nbsp;<span class='prop-tag'>2+ Hits</span></span><br><span class='leg'>Bryce Eldridge &nbsp;<span class='prop-tag'>3+ H+R+RBI</span></span></td>
+          <td class='num'>9</td>
+          <td class='num'>0.996</td>
+          <td class='num'>0.289</td>
+          <td class='num prob-col'>45.1% · 45.1% · 67.3%</td>
+          <td class='num'>33.3%</td>
+          <td class='num'>13.7%</td>
+          <td class='num edge-3'><strong>2.43×</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>SF</span></td>
+          <td class='legs-cell'><span class='leg'>Bryce Eldridge &nbsp;<span class='prop-tag'>2+ Hits</span></span><br><span class='leg'>Casey Schmitt &nbsp;<span class='prop-tag'>2+ H+R+RBI</span></span></td>
+          <td class='num'>13</td>
+          <td class='num'>0.828</td>
+          <td class='num'>0.509</td>
+          <td class='num prob-col'>31.8% · 69.4%</td>
+          <td class='num'>30.8%</td>
+          <td class='num'>22.1%</td>
+          <td class='num edge-1'><strong>1.39×</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>NYY</span></td>
+          <td class='legs-cell'><span class='leg'>Cody Bellinger &nbsp;<span class='prop-tag'>2+ Hits</span></span><br><span class='leg'>Aaron Judge &nbsp;<span class='prop-tag'>1+ Hits</span></span></td>
+          <td class='num'>10</td>
+          <td class='num'>0.965</td>
+          <td class='num'>0.855</td>
+          <td class='num prob-col'>33.5% · 73.2%</td>
+          <td class='num'>30.0%</td>
+          <td class='num'>24.5%</td>
+          <td class='num edge-1'><strong>1.22×</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>PIT</span></td>
+          <td class='legs-cell'><span class='leg'>Spencer Horwitz &nbsp;<span class='prop-tag'>1+ HR</span></span><br><span class='leg'>Oneil Cruz &nbsp;<span class='prop-tag'>3+ Total Bases</span></span></td>
+          <td class='num'>10</td>
+          <td class='num'>0.850</td>
+          <td class='num'>0.473</td>
+          <td class='num prob-col'>31.5% · 53.2%</td>
+          <td class='num'>30.0%</td>
+          <td class='num'>16.8%</td>
+          <td class='num edge-2'><strong>1.79×</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>MIL</span></td>
+          <td class='legs-cell'><span class='leg'>William Contreras &nbsp;<span class='prop-tag'>2+ Hits</span></span><br><span class='leg'>Christian Yelich &nbsp;<span class='prop-tag'>4+ Total Bases</span></span></td>
+          <td class='num'>11</td>
+          <td class='num'>0.869</td>
+          <td class='num'>0.563</td>
+          <td class='num prob-col'>37.3% · 37.9%</td>
+          <td class='num'>27.3%</td>
+          <td class='num'>14.1%</td>
+          <td class='num edge-2'><strong>1.93×</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>NYY</span></td>
+          <td class='legs-cell'><span class='leg'>Ben Rice &nbsp;<span class='prop-tag'>2+ Hits</span></span><br><span class='leg'>Cody Bellinger &nbsp;<span class='prop-tag'>2+ Hits</span></span><br><span class='leg'>Aaron Judge &nbsp;<span class='prop-tag'>1+ Hits</span></span></td>
+          <td class='num'>8</td>
+          <td class='num'>0.965</td>
+          <td class='num'>0.801</td>
+          <td class='num prob-col'>54.5% · 41.4% · 78.9%</td>
+          <td class='num'>25.0%</td>
+          <td class='num'>17.8%</td>
+          <td class='num edge-1'><strong>1.41×</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>CHC</span></td>
+          <td class='legs-cell'><span class='leg'>Ian Happ &nbsp;<span class='prop-tag'>2+ Hits</span></span><br><span class='leg'>Dansby Swanson &nbsp;<span class='prop-tag'>2+ H+R+RBI</span></span></td>
+          <td class='num'>8</td>
+          <td class='num'>0.944</td>
+          <td class='num'>0.713</td>
+          <td class='num prob-col'>26.2% · 57.4%</td>
+          <td class='num'>25.0%</td>
+          <td class='num'>15.1%</td>
+          <td class='num edge-2'><strong>1.66×</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>MIL</span></td>
+          <td class='legs-cell'><span class='leg'>Garrett Mitchell &nbsp;<span class='prop-tag'>2+ Hits</span></span><br><span class='leg'>Christian Yelich &nbsp;<span class='prop-tag'>5+ H+R+RBI</span></span></td>
+          <td class='num'>8</td>
+          <td class='num'>0.927</td>
+          <td class='num'>0.639</td>
+          <td class='num prob-col'>26.2% · 33.9%</td>
+          <td class='num'>25.0%</td>
+          <td class='num'>8.9%</td>
+          <td class='num edge-3'><strong>2.81×</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>AZ</span></td>
+          <td class='legs-cell'><span class='leg'>Gabriel Moreno &nbsp;<span class='prop-tag'>3+ Hits</span></span><br><span class='leg'>Geraldo Perdomo &nbsp;<span class='prop-tag'>3+ Total Bases</span></span></td>
+          <td class='num'>8</td>
+          <td class='num'>0.875</td>
+          <td class='num'>0.443</td>
+          <td class='num prob-col'>26.2% · 39.4%</td>
+          <td class='num'>25.0%</td>
+          <td class='num'>10.3%</td>
+          <td class='num edge-3'><strong>2.42×</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>WSH</span></td>
+          <td class='legs-cell'><span class='leg'>CJ Abrams &nbsp;<span class='prop-tag'>2+ Hits</span></span><br><span class='leg'>Luis García &nbsp;<span class='prop-tag'>1+ HR</span></span></td>
+          <td class='num'>12</td>
+          <td class='num'>0.816</td>
+          <td class='num'>0.457</td>
+          <td class='num prob-col'>34.3% · 26.2%</td>
+          <td class='num'>25.0%</td>
+          <td class='num'>9.0%</td>
+          <td class='num edge-3'><strong>2.77×</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>NYY</span></td>
+          <td class='legs-cell'><span class='leg'>Anthony Volpe &nbsp;<span class='prop-tag'>2+ Hits</span></span><br><span class='leg'>Cody Bellinger &nbsp;<span class='prop-tag'>4+ H+R+RBI</span></span></td>
+          <td class='num'>8</td>
+          <td class='num'>0.989</td>
+          <td class='num'>0.936</td>
+          <td class='num prob-col'>26.2% · 42.0%</td>
+          <td class='num'>25.0%</td>
+          <td class='num'>11.0%</td>
+          <td class='num edge-3'><strong>2.27×</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>NYY</span></td>
+          <td class='legs-cell'><span class='leg'>Jazz Chisholm Jr. &nbsp;<span class='prop-tag'>2+ Hits</span></span><br><span class='leg'>Cody Bellinger &nbsp;<span class='prop-tag'>5+ Total Bases</span></span></td>
+          <td class='num'>8</td>
+          <td class='num'>0.918</td>
+          <td class='num'>0.605</td>
+          <td class='num prob-col'>26.2% · 31.6%</td>
+          <td class='num'>25.0%</td>
+          <td class='num'>8.3%</td>
+          <td class='num edge-4'><strong>3.01×</strong></td>
+          
+        </tr>
+
+        <tr>
+          <td><span class='team-badge'>SF</span></td>
+          <td class='legs-cell'><span class='leg'>Willy Adames &nbsp;<span class='prop-tag'>2+ Hits</span></span><br><span class='leg'>Casey Schmitt &nbsp;<span class='prop-tag'>2+ Hits</span></span></td>
+          <td class='num'>21</td>
+          <td class='num'>0.959</td>
+          <td class='num'>0.900</td>
+          <td class='num prob-col'>44.7% · 38.7%</td>
+          <td class='num'>23.8%</td>
+          <td class='num'>17.3%</td>
+          <td class='num edge-1'><strong>1.38×</strong></td>
+          
+        </tr>
+        </tbody>
+      </table>
+      </div>
+    </section>
+</body>
+</html>

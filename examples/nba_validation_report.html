@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+<meta charset='UTF-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>NBA Half-Season Validation</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+       background: #0f1117; color: #e2e8f0; padding: 32px 24px; }
+h1 { font-size: 1.6rem; font-weight: 700; margin-bottom: 6px; color: #f8fafc; }
+.subtitle { color: #94a3b8; font-size: 0.875rem; margin-bottom: 40px; }
+section { margin-bottom: 52px; }
+h2 { font-size: 1.15rem; font-weight: 600; color: #f1f5f9;
+     border-left: 3px solid #8b5cf6; padding-left: 12px; margin-bottom: 6px; }
+.desc { font-size: 0.8rem; color: #64748b; margin-bottom: 14px; padding-left: 15px; }
+.table-wrap { overflow-x: auto; border-radius: 8px; border: 1px solid #1e293b; }
+table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+thead th { background: #1e293b; color: #94a3b8; font-weight: 600;
+           padding: 10px 12px; text-align: left; white-space: nowrap;
+           border-bottom: 1px solid #334155; cursor: help; }
+tbody tr { border-bottom: 1px solid #1e293b; }
+tbody tr:hover { background: #1a2235; }
+td { padding: 9px 12px; vertical-align: middle; }
+.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.prob-col { color: #94a3b8; font-size: 0.78rem; }
+.legs-cell { line-height: 1.7; }
+.leg { display: block; }
+.prop-tag { background: #2d1b69; color: #c4b5fd; border-radius: 4px;
+            padding: 1px 6px; font-size: 0.74rem; font-weight: 600; white-space: nowrap; }
+.team-badge { background: #1e293b; color: #cbd5e1; border-radius: 4px;
+              padding: 3px 8px; font-size: 0.78rem; font-weight: 700;
+              letter-spacing: 0.05em; white-space: nowrap; }
+.edge-1 { color: #fbbf24; }
+.edge-2 { color: #fb923c; }
+.edge-3 { color: #f87171; }
+.edge-4 { color: #a78bfa; }
+.edge-5 { color: #34d399; }
+.legend { display: flex; gap: 18px; font-size: 0.78rem; margin-bottom: 32px; flex-wrap: wrap; }
+.legend-item { display: flex; align-items: center; gap: 6px; }
+.legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+.glossary { background: #1e293b; border-radius: 8px; padding: 18px 22px;
+            font-size: 0.8rem; color: #94a3b8; margin-bottom: 40px; }
+.glossary h3 { font-size: 0.85rem; color: #cbd5e1; margin-bottom: 10px; }
+.glossary dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; }
+.glossary dt { color: #c4b5fd; font-weight: 600; }
+
+.stat-card { display: inline-block; background: #1e293b; border-radius: 8px;
+             padding: 16px 24px; margin: 0 12px 16px 0; text-align: center; min-width: 120px; }
+.stat-card .val { font-size: 2rem; font-weight: 700; color: #f1f5f9; }
+.stat-card .lbl { font-size: 0.78rem; color: #64748b; margin-top: 4px; }
+.ec { color: #f87171; }
+.es { color: #fbbf24; }
+.eh { color: #34d399; }
+.ex { color: #a78bfa; }
+</style>
+</head>
+<body>
+<h1>NBA Parlay Correlation -- Half-Season Validation</h1>
+<p class='subtitle'>Train on games up to <strong>2026-04-12-SACPOR</strong> &rarr; measure edge on untouched second-half games</p>
+
+<div style='margin: 32px 0'>
+  <div class='stat-card'><div class='val'>0</div><div class='lbl'>Pairs selected (train)</div></div>
+  <div class='stat-card'><div class='val'>0</div><div class='lbl'>Pairs with test data</div></div>
+  <div class='stat-card'><div class='val'>0</div><div class='lbl'>Edge held (&ge;1.2x)</div></div>
+  <div class='stat-card'><div class='val'>--x</div><div class='lbl'>Median train edge</div></div>
+  <div class='stat-card'><div class='val'>--x</div><div class='lbl'>Median test edge</div></div>
+</div>
+
+
+
+<section style='margin-top:32px'>
+  <h2>Validated Pairs (sorted by test edge)</h2>
+  <p class='desc'>Each pair was discovered using only first-half games. Edge ratio then measured on held-out second-half games it never saw.</p>
+  <div class='table-wrap'>
+  <table>
+    <thead><tr>
+      <th>Team</th><th>Leg 1</th><th>Leg 2</th>
+      <th title='In-sample r'>Train r</th>
+      <th title='Training games n'>Train n</th>
+      <th title='Edge ratio in training'>Train Edge</th>
+      <th title='Test games n'>Test n</th>
+      <th title='Edge ratio on held-out games'>Test Edge</th>
+    </tr></thead>
+    <tbody><tr><td colspan='8' style='text-align:center;color:#64748b;padding:32px'>No pairs selected in training</td></tr></tbody>
+  </table></div>
+</section>
+
+<div class='glossary' style='margin-top:40px'>
+  <h3>What does collapse mean?</h3>
+  <dl>
+    <dt>&lt;0.5x (red)</dt><dd>Edge collapsed -- the correlation was in-sample noise</dd>
+    <dt>0.5-1.0x (yellow)</dt><dd>Shrunk but positive -- might be partial signal, might be noise</dd>
+    <dt>1.0-1.2x</dt><dd>Flat -- held its ground but not enough to beat vig</dd>
+    <dt>1.2x+ (green)</dt><dd>Edge held -- this is what genuine correlation looks like out-of-sample</dd>
+    <dt>2.0x+ (purple)</dt><dd>Strong hold -- rare but indicates real structural correlation</dd>
+  </dl>
+</div>
+
+</body>
+</html>

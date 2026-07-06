@@ -1,0 +1,9 @@
+venv/
+__pycache__/
+*.pyc
+
+# generated at runtime
+src/.cache*/
+*.csv
+*.html
+!examples/*.html
