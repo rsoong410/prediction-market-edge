@@ -26,8 +26,7 @@ import numpy as np
 from scipy.stats import linregress, t as t_dist
 from nba_api.stats.endpoints import leaguegamelog
 
-# ─── CONFIG ──────────────────────────────────────────────────────────────────
-
+# config
 SRC_DIR   = os.path.dirname(__file__)
 CACHE_DIR = os.path.join(SRC_DIR, ".cache_shrink")
 OUT_DIR   = os.path.join(SRC_DIR, "..")
@@ -47,8 +46,7 @@ MIN_PO_N  = 5    # minimum shared playoff games per pair
 MAKER_HAIRCUT = 0.30   # implied from Kalshi quotes: their ~0.10 / our ~0.35
 
 
-# ─── DATA FETCHING ───────────────────────────────────────────────────────────
-
+# data fetching
 def fetch_logs(season: str, season_type: str, max_retries: int = 3) -> pd.DataFrame:
     key   = 'reg' if 'Regular' in season_type else 'po'
     fname = f"logs_{season}_{key}.csv"
@@ -99,8 +97,7 @@ def build_player_dict(df: pd.DataFrame) -> dict:
     return result
 
 
-# ─── PER-SEASON ANALYSIS ─────────────────────────────────────────────────────
-
+# per-season analysis
 def _var_ok(series: pd.Series, min_each: int = 2) -> bool:
     """True if both 0 and 1 appear at least min_each times."""
     s = int(series.sum())
@@ -205,8 +202,7 @@ def process_season(season: str) -> list:
     return obs
 
 
-# ─── POOLED ANALYSIS ─────────────────────────────────────────────────────────
-
+# pooled analysis
 def analyze(df: pd.DataFrame):
     n = len(df)
 
@@ -227,7 +223,7 @@ def analyze(df: pd.DataFrame):
     print(f"  Mean po_r:                 {df['po_r'].mean():.3f}  "
           f"(std {df['po_r'].std():.3f})")
 
-    # ── 1. Regression: po_r ~ reg_r ──────────────────────────────────────────
+    # 1. Regression: po_r ~ reg_r
     x = df['reg_r'].values
     y = df['po_r'].values
     slope, intercept, rval, pval, se = linregress(x, y)
@@ -241,7 +237,7 @@ def analyze(df: pd.DataFrame):
     print(f"  p-value:    {pval:.2e}")
     print(f"  NOTE: attenuation bias pushes β toward zero — treat as lower bound on true slope.")
 
-    # ── 2. Mean ratio po_r / reg_r (only positive reg_r pairs) ──────────────
+    # 2. Mean ratio po_r / reg_r (only positive reg_r pairs)
     pos = df[df['reg_r'] > 0.05].copy()
     ratios = pos['po_r'] / pos['reg_r']
     mu_r   = ratios.mean()
@@ -257,7 +253,7 @@ def analyze(df: pd.DataFrame):
     print(f"  Median:      {med_r:.3f}")
     print(f"  Std dev:     {std_r:.3f}")
 
-    # ── 3. Joint over-prediction ──────────────────────────────────────────────
+    # 3. Joint over-prediction
     df['joint_err'] = df['pred_joint'] - df['real_joint']
     mu_e   = df['joint_err'].mean()
     std_e  = df['joint_err'].std()
@@ -277,7 +273,7 @@ def analyze(df: pd.DataFrame):
     print(f"    Mean error: {mu_e_pos:+.4f}  [95% CI: {mu_e_pos-ci_e_pos:+.4f}, {mu_e_pos+ci_e_pos:+.4f}]")
     print(f"  Interpretation: positive = model over-predicts playoff joint probability.")
 
-    # ── 4. Decile breakdown ───────────────────────────────────────────────────
+    # 4. Decile breakdown
     df['reg_r_decile'] = pd.cut(df['reg_r'], bins=5,
                                  labels=['<-0.2','-0.2–0','-0–0.2','0.2–0.4','>0.4'])
     agg = df.groupby('reg_r_decile', observed=True).agg(
@@ -295,7 +291,7 @@ def analyze(df: pd.DataFrame):
         print(f"  {str(row['reg_r_decile']):<12} {int(row['n']):>6} {row['mean_reg_r']:>12.3f} "
               f"{row['mean_po_r']:>10.3f} {ratio_s:>8}")
 
-    # ── 5. VERDICT ────────────────────────────────────────────────────────────
+    # 5. VERDICT
     slope_lo = slope - ci_half
     slope_hi = slope + ci_half
 
@@ -350,8 +346,7 @@ def analyze(df: pd.DataFrame):
     return df
 
 
-# ─── MAIN ─────────────────────────────────────────────────────────────────────
-
+# main
 def main():
     print("=== NBA Reg-Season → Playoff Correlation Shrinkage Backtest ===")
     print(f"  Seasons: {SEASONS[0]} – {SEASONS[-1]}  ({len(SEASONS)} seasons)")
@@ -374,14 +369,12 @@ def main():
 
     df = pd.DataFrame(all_obs)
 
-    # Save raw data
     csv_path = os.path.join(OUT_DIR, "nba_shrinkage_obs.csv")
     df.to_csv(csv_path, index=False)
     print(f"\nSaved raw observations: {os.path.basename(csv_path)} ({len(df):,} rows)")
 
     df = analyze(df)
 
-    # Quick season-by-season summary
     print()
     print("── Season-by-season summary ──────────────────────────────────────")
     print(f"  {'Season':<10} {'N obs':>7} {'po_games':>9} {'mean reg_r':>11} {'mean po_r':>10} {'β approx':>9}")

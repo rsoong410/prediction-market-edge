@@ -8,8 +8,7 @@ from scipy.stats import norm
 from nba_api.stats.endpoints import leaguegamelog
 import requests
 
-# ─── CONFIG ──────────────────────────────────────────────────────────────────
-
+# config
 BASE_KALSHI   = "https://api.elections.kalshi.com/trade-api/v2"
 SRC_DIR       = os.path.dirname(__file__)
 CACHE_NBA_API = os.path.join(SRC_DIR, ".cache_nba_api")
@@ -29,8 +28,7 @@ SERIES_TO_STAT    = {'KXNBAPTS': 'PTS', 'KXNBAREB': 'REB', 'KXNBAAST': 'AST', 'K
 MONTHS = {"JAN":1,"FEB":2,"MAR":3,"APR":4,"MAY":5,"JUN":6,
           "JUL":7,"AUG":8,"SEP":9,"OCT":10,"NOV":11,"DEC":12}
 
-# ─── REGULAR SEASON DATA (nba_api) ───────────────────────────────────────────
-
+# regular season data (nba_api)
 def fetch_regular_season_logs() -> pd.DataFrame:
     existing = sorted(f for f in os.listdir(CACHE_NBA_API) if f.startswith(f"logs_{NBA_SEASON}_"))
     if existing:
@@ -76,8 +74,7 @@ def build_player_game_dict(df: pd.DataFrame) -> dict:
     return result
 
 
-# ─── KALSHI CACHE LOADER ─────────────────────────────────────────────────────
-
+# kalshi cache loader
 def nba_ticker_parse(ticker):
     seg  = ticker.split('-')[1]
     year = int(seg[0:2]) + 2000
@@ -131,8 +128,7 @@ def load_kalshi_markets() -> dict:
     return out
 
 
-# ─── ORDERBOOK / BID-ASK ─────────────────────────────────────────────────────
-
+# orderbook / bid-ask
 def fetch_bid_ask(ticker: str) -> tuple:
     """Returns (bid, ask) for yes side from live API."""
     try:
@@ -153,8 +149,7 @@ def fetch_bid_ask(ticker: str) -> tuple:
         return None, None
 
 
-# ─── MATH HELPERS ────────────────────────────────────────────────────────────
-
+# math helpers
 def fisher_ci(r: float, n: int, alpha: float = 0.05) -> tuple:
     if n <= 3 or np.isnan(r):
         return (np.nan, np.nan)
@@ -187,8 +182,7 @@ def _build_binary(player_dict, player_name, stat, thresh) -> pd.Series:
     return (g[stat].fillna(0).astype(int) >= thresh).astype(int)
 
 
-# ─── TASK 3: STABILITY CHECK ─────────────────────────────────────────────────
-
+# task 3: stability check
 def _stability_check(shared: pd.DataFrame, r_full: float) -> dict:
     """
     First half / second half / last-20 split.
@@ -232,8 +226,7 @@ def _stability_check(shared: pd.DataFrame, r_full: float) -> dict:
     }
 
 
-# ─── TASK 2: THRESHOLD-MATCHED CORRELATION ───────────────────────────────────
-
+# task 2: threshold-matched correlation
 def compute_finals_pairs(player_dict: dict, kalshi_markets: dict) -> list:
     """
     For Finals teams only, compute correlation at the EXACT Kalshi threshold.
@@ -326,8 +319,7 @@ def compute_finals_pairs(player_dict: dict, kalshi_markets: dict) -> list:
     return rows
 
 
-# ─── TASK 4: NET-OF-COST GATE ────────────────────────────────────────────────
-
+# task 4: net-of-cost gate
 def add_orderbook_costs(rows: list) -> list:
     """
     Fetch live bid/ask for each unique ticker. Add round-trip cost and net edge.
@@ -370,8 +362,7 @@ def add_orderbook_costs(rows: list) -> list:
     return rows
 
 
-# ─── HTML ─────────────────────────────────────────────────────────────────────
-
+# html
 CSS = """
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -560,8 +551,7 @@ def make_html(shortlist: list, candidates: list, n_games: int) -> str:
 </html>"""
 
 
-# ─── MAIN ─────────────────────────────────────────────────────────────────────
-
+# main
 def main():
     print("=== NBA Finals Prop Correlation Analysis (threshold-matched) ===\n")
 
@@ -605,7 +595,6 @@ def main():
         r for r in candidates
         if r.get('stable', False) and not np.isnan(r.get('net_edge', np.nan)) and r['net_edge'] > 0
     ]
-    # Sort candidates by net_edge descending
     candidates.sort(key=lambda r: r.get('net_edge') or -9999, reverse=True)
     shortlist.sort(key=lambda r: r.get('net_edge') or -9999, reverse=True)
 
@@ -637,12 +626,10 @@ def main():
         print(f"{row['team']:<5} {pair:<55} {row['r']:>6.3f} {row['n']:>4} "
               f"{row['ci_lo']:>6.3f} {net_s} {stab_s}")
 
-    # Save CSV
     csv_path = os.path.join(OUT_DIR, "nba_api_finals_pairs.csv")
     pd.DataFrame(candidates).drop(columns=['stable'], errors='ignore').to_csv(csv_path, index=False)
     print(f"\nSaved: {os.path.basename(csv_path)} ({len(candidates)} rows)")
 
-    # Generate HTML
     html_path = os.path.join(OUT_DIR, "nba_api_report.html")
     html = make_html(shortlist, candidates, n_games)
     with open(html_path, 'w', encoding='utf-8') as f:

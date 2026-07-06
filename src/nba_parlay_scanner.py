@@ -45,8 +45,7 @@ TEAMS_TO_ANALYZE = [
     'SAC', 'MIN', 'POR', 'MEM', 'NOP', 'PHX', 'UTA',
 ]
 
-# ─── API HELPERS ──────────────────────────────────────────────────────────────
-
+# api helpers
 def get_markets(series, ticker_prefix=None, max_pages=100):
     params = {"limit": 1000, "series_ticker": series}
     if ticker_prefix:
@@ -89,8 +88,7 @@ def get_markets_cached(series):
     return markets
 
 
-# ─── NBA TICKER PARSING ───────────────────────────────────────────────────────
-
+# nba ticker parsing
 def nba_ticker_parse(ticker):
     """
     Returns (date_str YYYY-MM-DD, matchup str).
@@ -105,8 +103,7 @@ def nba_ticker_parse(ticker):
     return f"{year}-{month:02d}-{day:02d}", matchup
 
 
-# ─── BUILD PROP DICT ──────────────────────────────────────────────────────────
-
+# build prop dict
 def build_prop_dict(team_abbr, series_list=None):
     """
     Build prop dict from Kalshi NBA market results.
@@ -178,8 +175,7 @@ def build_prop_dict(team_abbr, series_list=None):
     return prop_dict, raw_dict
 
 
-# ─── CORRELATION & FISHER CI ──────────────────────────────────────────────────
-
+# correlation & fisher ci
 def _label_entity(label):
     """
     Returns the 'thing being measured': player name for player props,
@@ -212,8 +208,7 @@ def fisher_ci(r, n, alpha=0.05):
     return (round(np.tanh(z - zcrit * se), 3), round(np.tanh(z + zcrit * se), 3))
 
 
-# ─── PARLAY FINDER ────────────────────────────────────────────────────────────
-
+# parlay finder
 def parlay_finder(prop_dict, n_legs=2, top_n=10, min_n=20, fdr_q=0.10):
     """
     BH-FDR corrected search for positively-correlated player prop pairs.
@@ -334,8 +329,7 @@ def parlay_edge_rows(results, raw_dict, team):
     return rows
 
 
-# ─── VALIDATION HELPERS ───────────────────────────────────────────────────────
-
+# validation helpers
 def find_season_midpoint(team_raw_dicts):
     all_keys = []
     for raw_dict in team_raw_dicts.values():
@@ -378,8 +372,7 @@ def pair_edge_on(label_a, label_b, raw_dict, min_n=3):
     return (p_joint / p_indep if p_indep > 0 else np.nan), n
 
 
-# ─── HTML HELPERS ─────────────────────────────────────────────────────────────
-
+# html helpers
 def clean_label(label):
     if not isinstance(label, str) or label.strip() in ('', 'nan'):
         return ''
@@ -430,8 +423,7 @@ def fmt_num(v, d=2):
         return '--'
 
 
-# ─── HTML TEMPLATES ───────────────────────────────────────────────────────────
-
+# html templates
 BASE_CSS = """
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -709,8 +701,7 @@ def make_validation_html(val_df, cutoff):
 </html>"""
 
 
-# ─── MAIN RUN ─────────────────────────────────────────────────────────────────
-
+# main run
 significant:  dict = {}
 all_csv_rows: list = []
 all_team_raw: dict = {}
@@ -747,8 +738,7 @@ else:
 
 OUT_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), '..'))
 
-# ─── CSV EXPORT ───────────────────────────────────────────────────────────────
-
+# csv export
 if all_csv_rows:
     df_all = pd.DataFrame(all_csv_rows)
     df_all.to_csv(os.path.join(OUT_DIR, 'nba_parlays.csv'), index=False)
@@ -799,8 +789,7 @@ else:
     print("\nNo significant combinations found -- skipping CSVs and HTML.")
     df_cred = df_genuine = df_pract = pd.DataFrame()
 
-# ─── TRAIN / TEST VALIDATION ──────────────────────────────────────────────────
-
+# train / test validation
 print("\n\n" + "="*60)
 print("TRAIN/TEST VALIDATION")
 print("="*60)

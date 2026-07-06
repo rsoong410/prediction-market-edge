@@ -27,8 +27,7 @@ MONTHS = {"JAN":1,"FEB":2,"MAR":3,"APR":4,"MAY":5,"JUN":6,
 HIT_EVENTS = {'single', 'double', 'triple', 'home_run'}
 TB_MAP     = {'single': 1, 'double': 2, 'triple': 3, 'home_run': 4}
 
-# ─── API HELPERS ──────────────────────────────────────────────────────────────
-
+# api helpers
 def pregame_price(ticker):
     if ticker in _price_cache:
         return _price_cache[ticker]
@@ -124,8 +123,7 @@ def ticker_to_datetime(ticker):
 def ticker_to_date(ticker):
     return ticker_to_datetime(ticker)[0]
 
-# ─── ROSTER DISCOVERY ─────────────────────────────────────────────────────────
-
+# roster discovery
 def get_team_roster(team_abbr, series_list=None):
     """
     Scrape Kalshi player-prop series to find all unique players with markets
@@ -145,8 +143,7 @@ def get_team_roster(team_abbr, series_list=None):
                 seen.add((words[0], words[1]))
     return list(seen)
 
-# ─── CACHING ──────────────────────────────────────────────────────────────────
-
+# caching
 def _statcast_cache_path(name, kind):
     return os.path.join(CACHE_DIR, f"{name}_{kind}.parquet")
 
@@ -176,8 +173,7 @@ def _save_price_cache(cache: dict):
 
 _price_cache = _load_price_cache()
 
-# ─── STATCAST PATH (unused by main build — kept for quick_correlation) ────────
-
+# statcast path (unused by main build — kept for quick_correlation)
 def _aggregate_raw(raw, is_pitcher=False):
     if raw.empty:
         cols = ['game_pk', 'game_date', 'ks'] if is_pitcher else ['game_pk', 'game_date', 'hits', 'hr', 'tb', 'rbi', 'hrr']
@@ -237,8 +233,7 @@ def compute_game_stats(firstname, lastname):
 def compute_pitcher_game_stats(firstname, lastname):
     return _fetch_and_cache(firstname, lastname, is_pitcher=True)
 
-# ─── TEAM GAME RESULTS ────────────────────────────────────────────────────────
-
+# team game results
 def get_team_game_results(team_abbr):
     """Game results from pybaseball schedule_and_record."""
     df = schedule_and_record(2026, team_abbr)
@@ -257,10 +252,8 @@ def get_team_game_results(team_abbr):
     df['win']          = df['W/L'].str.startswith('W').astype(int)
     return df[['game_date','game_order','runs_scored','runs_allowed','run_diff','total_runs','win']]
 
-# ─── END STATCAST PATH ────────────────────────────────────────────────────────
-
-# ─── PRICE FETCH ──────────────────────────────────────────────────────────────
-
+# end statcast path
+# price fetch
 STAT_COL = {
     'KXMLBHIT': 'hits',
     'KXMLBHR':  'hr',
@@ -306,7 +299,6 @@ def player_prop_table(firstname, lastname, series, markets=None, game_stats=None
         threshold = int(parts[-1])
         threshold_markets.setdefault(threshold, []).append(m['ticker'])
 
-    # fetch all prices in parallel across all thresholds at once
     all_tickers = [t for tickers in threshold_markets.values() for t in tickers]
     price_map   = fetch_prices_parallel(all_tickers)
     none_count  = sum(v is None for v in price_map.values())
@@ -365,7 +357,6 @@ def team_prop_table(team_abbr, series, markets=None):
     if not outcome_fn:
         return {}
 
-    # build game_order map from all tickers: (date, time_utc) -> game_order
     all_entries = []
     for m in (markets if markets is not None else get_markets(series)):
         parts = m['ticker'].split('-')
@@ -378,7 +369,6 @@ def team_prop_table(team_abbr, series, markets=None):
         all_entries.append({'ticker': m['ticker'], 'game_date': date,
                             'time_utc': mins, 'threshold': threshold})
 
-    # dense-rank times within each date to get game_order (0 = first game)
     if not all_entries:
         return {}
     entries_df = pd.DataFrame(all_entries)
@@ -413,8 +403,7 @@ def team_prop_table(team_abbr, series, markets=None):
         result[label] = df
     return result
 
-# ─── BUILD FULL PROP DICT ─────────────────────────────────────────────────────
-
+# build full prop dict
 def build_prop_dict(team_abbr, series_list=None):
     """
     Build prop dict from Kalshi market results — no statcast needed.
@@ -424,7 +413,6 @@ def build_prop_dict(team_abbr, series_list=None):
     if series_list is None:
         series_list = PLAYER_SERIES + PITCHER_SERIES + TEAM_SERIES
 
-    # collect all resolved markets for this team
     all_markets = []
     for series in series_list:
         print(f"  fetching {series}...")
@@ -489,8 +477,7 @@ def build_prop_dict(team_abbr, series_list=None):
     print(f"Built {len(prop_dict)} props total.")
     return prop_dict, raw_dict
 
-# ─── CORRELATION & FISHER CI ──────────────────────────────────────────────────
-
+# correlation & fisher ci
 def _label_entity(label):
     """
     Extract the 'thing being measured' from a prop label.
@@ -547,8 +534,7 @@ def correlation_matrix(prop_dict):
     print("\nShared games (n):\n", n_mat)
     return corr_mat, n_mat, ci_mat
 
-# ─── PARLAY FINDER ────────────────────────────────────────────────────────────
-
+# parlay finder
 def parlay_finder(prop_dict, n_legs=2, top_n=10, min_n=20, fdr_q=0.10):
     """
     Find parlay combinations with statistically significant positive correlation.
@@ -650,7 +636,6 @@ def parlay_edge_rows(results, raw_dict, team):
         n_legs = len(combo)
         pair_stats = res['pairs']
 
-        # join all legs on game_key (inner join)
         frames = []
         for i, label in enumerate(combo):
             if label not in raw_dict:
@@ -664,13 +649,11 @@ def parlay_edge_rows(results, raw_dict, team):
             continue
 
         n_shared = len(shared)
-        # average pregame implied probability for each leg
         mean_prices = [shared[f'p{i}'].mean() for i in range(n_legs)]
-        # observed joint hit rate in shared games
         all_yes = (shared[[f'out{i}' for i in range(n_legs)]] == 1).all(axis=1)
         p_joint = all_yes.mean()
         p_indep = float(np.prod(mean_prices))
-        # ratio: > 1 means positive correlation creates edge vs independence assumption
+        # > 1 means positive correlation creates edge vs. the independence assumption
         ratio = p_joint / p_indep if p_indep > 0 else float('nan')
 
         row = {
@@ -694,8 +677,7 @@ def parlay_edge_rows(results, raw_dict, team):
     return rows
 
 
-# ─── VALIDATION HELPERS ───────────────────────────────────────────────────────
-
+# validation helpers
 def find_season_midpoint(team_raw_dicts):
     """Median game_key across all teams/props — used as train/test cutoff."""
     all_keys = []
@@ -741,8 +723,7 @@ def pair_edge_on(label_a, label_b, raw_dict, min_n=3):
     return (p_joint / p_indep if p_indep > 0 else np.nan), n
 
 
-# ─── RUN ──────────────────────────────────────────────────────────────────────
-
+# run
 # All 30 MLB teams — Kalshi abbreviations (verified from ticker data)
 TEAMS_TO_ANALYZE = [
     'LAD', 'NYY', 'BOS', 'ATL', 'PHI', 'HOU', 'CHC', 'NYM', 'SD', 'SF',
@@ -788,16 +769,14 @@ if significant:
 else:
     print("  No significant combinations found across any team.")
 
-# ─── CSV EXPORT ───────────────────────────────────────────────────────────────
-
+# csv export
 if all_csv_rows:
     csv_path = os.path.join(os.path.dirname(__file__), '..', 'parlays.csv')
     csv_path = os.path.normpath(csv_path)
     pd.DataFrame(all_csv_rows).to_csv(csv_path, index=False)
     print(f"\nSaved {len(all_csv_rows)} parlay combinations to {csv_path}")
 
-# ─── TRAIN / TEST VALIDATION ──────────────────────────────────────────────────
-
+# train / test validation
 print("\n\n" + "="*60)
 print("TRAIN/TEST VALIDATION")
 print("="*60)
