@@ -12,10 +12,40 @@ import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 BASE_URL     = "https://api.elections.kalshi.com/trade-api/v2"
-SEASON_START = "2026-01-01"
+SEASON_YEAR  = 2026
+SEASON_START = f"{SEASON_YEAR}-01-01"
 SEASON_END   = datetime.date.today().isoformat()
 CACHE_DIR    = os.path.join(os.path.dirname(__file__), ".cache")
 os.makedirs(CACHE_DIR, exist_ok=True)
+
+# Train/test split of the season. None = calendar midpoint between the first and
+# last game actually played; set e.g. "2026-06-15" to pin the cutoff by hand.
+# Games on the split date itself fall in the first half.
+SPLIT_DATE  = None
+TRAIN_MIN_N = 5   # min shared games for a pair to be discoverable in the first half
+TEST_MIN_N  = 3   # min shared games in the second half for the pair to be gradeable
+HELD_EDGE   = 1.2 # second-half edge ratio a pair must clear to count as "held"
+MAX_PAIR_R  = 0.95 # above this two binary series are effectively the same event, not a relationship
+
+# Running tally of pairs rejected by the pre-FDR gates, so a run that finds nothing
+# can still report why. Snapshot and diff it to scope counts to one phase.
+FILTER_STATS = {'degenerate': 0, 'zero_joint': 0, 'uninformative_joint': 0}
+
+# Pairs clearing BH, split by the sign of r. Same snapshot-and-diff pattern.
+BH_STATS = {'positive': 0, 'negative': 0}
+
+DIRECTIONS = ('positive', 'negative', 'both')
+SCAN_DIRECTION = 'both'  # direction used by the run block below; parlay_finder still defaults to 'positive'
+
+# A negatively-correlated parlay is the mirror of a positive one: it HOLDS when the
+# joint stays proportionally as far BELOW independence as a positive one sits above.
+HELD_EDGE_NEG = 1 / HELD_EDGE
+
+# For a negative pair the signal is a joint that fires less often than independence
+# predicts. That is only informative when independence predicted a meaningful number
+# of joint hits — with two longshots at n=5 you expect ~0 anyway, so observing 0
+# says nothing. Require this many expected joint hits before trusting a negative pair.
+MIN_EXPECTED_JOINT = 1.0
 
 PLAYER_SERIES = ['KXMLBHIT', 'KXMLBHR', 'KXMLBHRR', 'KXMLBTB']
 PITCHER_SERIES = ['KXMLBKS']
@@ -236,12 +266,12 @@ def compute_pitcher_game_stats(firstname, lastname):
 # team game results
 def get_team_game_results(team_abbr):
     """Game results from pybaseball schedule_and_record."""
-    df = schedule_and_record(2026, team_abbr)
+    df = schedule_and_record(SEASON_YEAR, team_abbr)
     df = df[df['R'].notna() & df['RA'].notna()].copy()
     # pybaseball Date format: "Apr 1" — add year for parsing
     df['game_date'] = pd.to_datetime(
         df['Date'].str.replace(r'^[A-Za-z]+,\s*', '', regex=True)
-                  .str.replace(r'\s*\(\d+\)', '', regex=True) + ' 2026',
+                  .str.replace(r'\s*\(\d+\)', '', regex=True) + f' {SEASON_YEAR}',
         format='%b %d %Y'
     ).dt.strftime('%Y-%m-%d')
     df['game_order']   = df.groupby('game_date').cumcount()  # 0 = first game, 1 = second (DH)
@@ -494,8 +524,17 @@ def _label_entity(label):
 
 
 def _corr_pvalue(r, n, one_sided=False):
-    """P-value for Pearson r via Fisher z.
-    one_sided=True tests r > 0 (upper tail); use this for positive-correlation search."""
+    """
+    P-value for Pearson r via Fisher z.
+
+    one_sided=True  tests H1: r > 0 (upper tail only). Negative r yields p near 1,
+                    so negative pairs are auto-failed by BH — the positive-only search.
+    one_sided=False tests H1: r != 0 (both tails). Required whenever negative pairs
+                    should be discoverable, since it judges |r| rather than r.
+
+    Default is two-sided; the one-sided path is opt-in so switching direction is
+    always an explicit choice at the call site.
+    """
     if n <= 3 or np.isnan(r):
         return 1.0
     z = np.arctanh(r) * np.sqrt(n - 3)
@@ -535,19 +574,52 @@ def correlation_matrix(prop_dict):
     return corr_mat, n_mat, ci_mat
 
 # parlay finder
-def parlay_finder(prop_dict, n_legs=2, top_n=10, min_n=20, fdr_q=0.10):
+def parlay_finder(prop_dict, n_legs=2, top_n=10, min_n=20, fdr_q=0.10,
+                  raw_dict=None, max_r=MAX_PAIR_R, direction='positive'):
     """
-    Find parlay combinations with statistically significant positive correlation.
+    Find parlay combinations whose legs are significantly correlated.
 
-    Two gates, applied in order:
+    direction:
+      'positive' (default) — legs move together; the joint is UNDERpriced under the
+                             independence assumption, so the parlay is buyable.
+                             Uses one-sided p-values, preserving historical behavior.
+      'negative'           — legs move apart; the joint is OVERpriced, so the trade is
+                             the other side. Uses two-sided p-values.
+      'both'               — report either sign. Two-sided p-values.
+
+    Gates, applied in order:
       1. n >= min_n shared games (drops underpowered pairs before FDR)
-      2. BH-FDR at fdr_q using one-sided p-values (r > 0) across ALL remaining pairs
+      2. |r| < max_r — two binary series that move together almost perfectly are the
+         same event wearing two labels (a player's 1+ and 2+ thresholds, a prop listed
+         only on games the other was also listed on). These produce r ~ 0.99 on tiny
+         samples and would otherwise dominate the rankings.
+      3. coherence between r and the observed joint (needs raw_dict), keyed on sign of r:
+           r > 0 → the joint must have occurred at least once. A pair claiming positive
+                   correlation that never once hit together is the artifact signature:
+                   when both legs always lose, surprise collapses to -price and what
+                   gets measured is the correlation of the two PRICES.
+           r < 0 → a zero joint is coherent with the claim, so it is allowed, but
+                   independence must have predicted at least MIN_EXPECTED_JOINT hits.
+                   Otherwise "fewer joints than expected" is unmeasurable.
+      4. BH-FDR at fdr_q across ALL surviving pairs
 
-    One-sided p-values mean negative correlations automatically fail BH —
-    no redundant CI gate needed. CI is shown for interpretation only.
-    Ranked by min CI lower bound across pairs (not avg_r).
+    Gates 2 and 3 run before FDR so artifacts don't inflate m and dilute the correction.
+    BH runs ONCE over the combined p-value list — positive and negative candidates share
+    a single family. Splitting them into two corrections would inflate the true FDR.
+    Direction filtering is applied AFTER BH, to the survivors, so the family size m is
+    identical no matter which direction is requested.
+
+    Ranked by strength of the CI bound facing away from zero: max CI upper bound
+    (most negative) for negative pairs, min CI lower bound for positive pairs.
     """
+    if direction not in DIRECTIONS:
+        raise ValueError(f"direction must be one of {DIRECTIONS}, got {direction!r}")
+
     labels = list(prop_dict.keys())
+    dropped_r = dropped_joint = dropped_uninformative = 0
+    # one-sided only for the positive-only search; any search that must surface
+    # negative r needs both tails or negative pairs are auto-failed by construction
+    one_sided = (direction == 'positive')
 
     _team_series = set(TEAM_SERIES)
 
@@ -565,9 +637,33 @@ def parlay_finder(prop_dict, n_legs=2, top_n=10, min_n=20, fdr_q=0.10):
             continue
         with np.errstate(invalid='ignore', divide='ignore'):
             r = shared.iloc[:, 0].corr(shared.iloc[:, 1]) if n > 2 else np.nan
+        if np.isnan(r) or abs(r) >= max_r:
+            dropped_r += 1
+            continue
+        if raw_dict is not None:
+            st = pair_stats_on(a, b, raw_dict, min_n=min_n)
+            joint, indep = st.get('p_joint', np.nan), st.get('p_indep', np.nan)
+            if np.isnan(joint) or np.isnan(indep):
+                dropped_joint += 1
+                continue
+            if r > 0 and joint <= 0:
+                dropped_joint += 1
+                continue
+            if r < 0 and st['n'] * indep < MIN_EXPECTED_JOINT:
+                dropped_uninformative += 1
+                continue
         lo, hi = fisher_ci(r, n)
-        p = _corr_pvalue(r, n, one_sided=True)  # one-sided: testing r > 0
-        pair_cache[(a, b)] = {'r': r, 'n': n, 'ci': (lo, hi), 'p': p}
+        p = _corr_pvalue(r, n, one_sided=one_sided)
+        pair_cache[(a, b)] = {'r': r, 'n': n, 'ci': (lo, hi), 'p': p,
+                              'direction': 'positive' if r > 0 else 'negative'}
+
+    FILTER_STATS['degenerate'] += dropped_r
+    FILTER_STATS['zero_joint'] += dropped_joint
+    FILTER_STATS['uninformative_joint'] += dropped_uninformative
+    if dropped_r or dropped_joint or dropped_uninformative:
+        print(f"  filtered {dropped_r} degenerate (|r|>={max_r}), "
+              f"{dropped_joint} incoherent-joint, "
+              f"{dropped_uninformative} uninformative-negative pairs before FDR")
 
     # Step 2: BH-FDR across all valid pairs (true BH: reject 1..k_max)
     if pair_cache:
@@ -585,13 +681,28 @@ def parlay_finder(prop_dict, n_legs=2, top_n=10, min_n=20, fdr_q=0.10):
     else:
         fdr_pass = set()
 
+    # Step 2b: direction filter, applied to BH SURVIVORS only. Doing it here rather
+    # than before Step 2 keeps the family size m identical across direction settings,
+    # so a pair's significance never depends on which direction was requested.
+    bh_by_dir = {'positive': 0, 'negative': 0}
+    for k in fdr_pass:
+        bh_by_dir[pair_cache[k]['direction']] += 1
+    BH_STATS['positive'] += bh_by_dir['positive']
+    BH_STATS['negative'] += bh_by_dir['negative']
+
+    if direction != 'both':
+        fdr_pass = {k for k in fdr_pass if pair_cache[k]['direction'] == direction}
+    if bh_by_dir['positive'] or bh_by_dir['negative']:
+        print(f"  BH passed: {bh_by_dir['positive']} positive, {bh_by_dir['negative']} negative "
+              f"(of {len(pair_cache)} tested, direction={direction})")
+
     def _lookup(a, b):
         return pair_cache.get((a, b)) or pair_cache.get((b, a))
 
     def _key(a, b):
         return (a, b) if (a, b) in pair_cache else (b, a)
 
-    # Step 3: combos where every pair has n >= min_n and passes BH-FDR (one-sided)
+    # Step 3: combos where every pair has n >= min_n and passes BH-FDR
     # CI is kept for display only — BH is the single significance gate
     results = []
     for combo in itertools.combinations(labels, n_legs):
@@ -605,16 +716,23 @@ def parlay_finder(prop_dict, n_legs=2, top_n=10, min_n=20, fdr_q=0.10):
             pair_stats.append({'pair': (a, b), **ps})
         if not valid:
             continue
-        min_lo = min(ps['ci'][0] for ps in pair_stats)
-        results.append({'combo': combo, 'min_lo': min_lo, 'pairs': pair_stats})
 
-    results.sort(key=lambda x: x['min_lo'], reverse=True)
+        dirs = {ps['direction'] for ps in pair_stats}
+        combo_dir = dirs.pop() if len(dirs) == 1 else 'mixed'
+        # Strength = the CI bound facing AWAY from zero, so positive and negative
+        # combos rank on the same scale (higher = further from zero = stronger).
+        strength = min((ps['ci'][0] if ps['r'] > 0 else -ps['ci'][1]) for ps in pair_stats)
+        results.append({'combo': combo, 'min_lo': min(ps['ci'][0] for ps in pair_stats),
+                        'strength': strength, 'direction': combo_dir, 'pairs': pair_stats})
 
-    print(f"\nTop {top_n} {n_legs}-leg parlays (CI lo > 0, BH-FDR q<={fdr_q:.0%}, min_n={min_n}):")
+    results.sort(key=lambda x: x['strength'], reverse=True)
+
+    print(f"\nTop {top_n} {n_legs}-leg parlays "
+          f"(direction={direction}, BH-FDR q<={fdr_q:.0%}, min_n={min_n}):")
     if not results:
         print("  (no significant combinations — try reducing min_n or gathering more data)")
     for i, res in enumerate(results[:top_n], 1):
-        print(f"\n#{i}  min_CI_lo={res['min_lo']:.3f}")
+        print(f"\n#{i}  [{res['direction']}]  strength={res['strength']:.3f}")
         for leg in res['combo']:
             print(f"  • {leg}")
         for p in res['pairs']:
@@ -653,8 +771,15 @@ def parlay_edge_rows(results, raw_dict, team):
         all_yes = (shared[[f'out{i}' for i in range(n_legs)]] == 1).all(axis=1)
         p_joint = all_yes.mean()
         p_indep = float(np.prod(mean_prices))
-        # > 1 means positive correlation creates edge vs. the independence assumption
+        # Raw, un-inverted ratio. > 1: the joint fires more often than independent
+        # pricing implies (underpriced, buy). < 1: less often (overpriced, sell/fade).
+        # Deliberately NOT abs()'d or flipped — the sign carries the trade direction.
         ratio = p_joint / p_indep if p_indep > 0 else float('nan')
+
+        if np.isnan(ratio) or ratio == 1:
+            tradeable_side = ''
+        else:
+            tradeable_side = 'buy_yes' if ratio > 1 else 'buy_no'
 
         row = {
             'team':   team,
@@ -662,6 +787,8 @@ def parlay_edge_rows(results, raw_dict, team):
             'leg_1':  combo[0],
             'leg_2':  combo[1],
             'leg_3':  combo[2] if n_legs > 2 else '',
+            'direction':      res.get('direction', 'positive'),
+            'tradeable_side': tradeable_side,
             'r_min':  round(min(p['r'] for p in pair_stats), 3),
             'r_max':  round(max(p['r'] for p in pair_stats), 3),
             'ci_lo':  round(res['min_lo'], 3),
@@ -678,17 +805,36 @@ def parlay_edge_rows(results, raw_dict, team):
 
 
 # validation helpers
-def find_season_midpoint(team_raw_dicts):
-    """Median game_key across all teams/props — used as train/test cutoff."""
-    all_keys = []
-    for raw_dict in team_raw_dicts.values():
-        for df in raw_dict.values():
-            all_keys.extend(df.index.tolist())
-    sorted_keys = sorted(set(all_keys))
-    mid = sorted_keys[len(sorted_keys) // 2]
-    print(f"  first game: {sorted_keys[0]}  midpoint: {mid}  last: {sorted_keys[-1]}")
-    print(f"  ({len(sorted_keys)} unique game slots total)")
-    return mid
+def find_season_split(team_raw_dicts, split_date=None):
+    """
+    Cutoff game_key separating the first half of the season from the second.
+
+    Default is the calendar midpoint between the first and last game with resolved
+    markets — not the median game slot, which skews toward whichever stretch of the
+    schedule happened to have the most props listed. Returned cutoff is inclusive:
+    games on the split date itself land in the first half.
+    """
+    all_keys = sorted({k for raw_dict in team_raw_dicts.values()
+                         for df in raw_dict.values() for k in df.index})
+    if not all_keys:
+        raise SystemExit("No resolved games found — nothing to split.")
+
+    first_date = datetime.date.fromisoformat(all_keys[0][:10])
+    last_date  = datetime.date.fromisoformat(all_keys[-1][:10])
+    split = (datetime.date.fromisoformat(split_date) if split_date
+             else first_date + datetime.timedelta(days=(last_date - first_date).days // 2))
+
+    cutoff  = f"{split.isoformat()}-9999"
+    n_train = sum(1 for k in all_keys if k <= cutoff)
+    n_test  = len(all_keys) - n_train
+
+    print(f"  season spans {first_date} → {last_date} ({len(all_keys)} game slots)")
+    print(f"  split at {split} ({'manual' if split_date else 'calendar midpoint'})")
+    print(f"  first half: {first_date} → {split}  ({n_train} slots)")
+    print(f"  second half: {split + datetime.timedelta(days=1)} → {last_date}  ({n_test} slots)")
+    if n_test == 0:
+        raise SystemExit("Second half is empty — nothing to validate against.")
+    return cutoff
 
 
 def split_raw_dict(raw_dict, cutoff, min_n=3):
@@ -708,19 +854,35 @@ def raw_to_prop_dict(raw_dict):
     return {lbl: df['outcome'] - df['price'] for lbl, df in raw_dict.items()}
 
 
-def pair_edge_on(label_a, label_b, raw_dict, min_n=3):
-    """Edge ratio for an (a, b) pair using the given raw_dict slice."""
+_EMPTY_PAIR = {'edge': np.nan, 'r': np.nan, 'n': 0, 'p_joint': np.nan, 'p_indep': np.nan}
+
+def pair_stats_on(label_a, label_b, raw_dict, min_n=3):
+    """
+    Edge ratio, surprise correlation, and shared-game count for an (a, b) pair
+    on the given raw_dict slice. Reporting r alongside edge separates the two ways
+    a pair can fail out-of-sample: the correlation vanished, or it survived but the
+    joint rate still didn't beat the independent price.
+    """
     if label_a not in raw_dict or label_b not in raw_dict:
-        return np.nan, 0
+        return dict(_EMPTY_PAIR)
     da = raw_dict[label_a].rename(columns={'outcome': 'out_a', 'price': 'p_a'})
     db = raw_dict[label_b].rename(columns={'outcome': 'out_b', 'price': 'p_b'})
     shared = da.join(db, how='inner').dropna()
     n = len(shared)
     if n < min_n:
-        return np.nan, n
+        return dict(_EMPTY_PAIR, n=n)
+
     p_joint = ((shared['out_a'] == 1) & (shared['out_b'] == 1)).mean()
     p_indep = shared['p_a'].mean() * shared['p_b'].mean()
-    return (p_joint / p_indep if p_indep > 0 else np.nan), n
+    with np.errstate(invalid='ignore', divide='ignore'):
+        r = (shared['out_a'] - shared['p_a']).corr(shared['out_b'] - shared['p_b']) if n > 2 else np.nan
+    return {
+        'edge':    p_joint / p_indep if p_indep > 0 else np.nan,
+        'r':       r,
+        'n':       n,
+        'p_joint': p_joint,
+        'p_indep': p_indep,
+    }
 
 
 # run
@@ -751,8 +913,10 @@ for team in TEAMS_TO_ANALYZE:
     for label, s in prop_dict.items():
         print(f"  {label}: n={len(s)}")
 
-    two_leg   = parlay_finder(prop_dict, n_legs=2, top_n=5, min_n=8)
-    three_leg = parlay_finder(prop_dict, n_legs=3, top_n=3, min_n=8)
+    two_leg   = parlay_finder(prop_dict, n_legs=2, top_n=5, min_n=8, raw_dict=raw_dict,
+                              direction=SCAN_DIRECTION)
+    three_leg = parlay_finder(prop_dict, n_legs=3, top_n=3, min_n=8, raw_dict=raw_dict,
+                              direction=SCAN_DIRECTION)
 
     if two_leg or three_leg:
         significant[team] = {'2-leg': two_leg, '3-leg': three_leg}
@@ -776,72 +940,112 @@ if all_csv_rows:
     pd.DataFrame(all_csv_rows).to_csv(csv_path, index=False)
     print(f"\nSaved {len(all_csv_rows)} parlay combinations to {csv_path}")
 
-# train / test validation
+# first half / second half validation
 print("\n\n" + "="*60)
-print("TRAIN/TEST VALIDATION")
+print(f"FIRST HALF vs SECOND HALF — {SEASON_YEAR} SEASON")
 print("="*60)
-print("Finding season midpoint...")
-cutoff = find_season_midpoint(all_team_raw)
-print(f"Cutoff: {cutoff}\n")
+cutoff = find_season_split(all_team_raw, SPLIT_DATE)
+print()
+
+def _r2(v, places=2):
+    return round(v, places) if v is not None and not (isinstance(v, float) and np.isnan(v)) else np.nan
+
+VAL_COLS = ['team', 'leg_1', 'leg_2', 'direction', 'tradeable_side',
+            'train_r', 'train_ci_lo', 'train_n', 'train_edge',
+            'test_r', 'test_n', 'test_edge', 'r_held', 'edge_held']
+
+def _edge_held(direction, edge):
+    """
+    Did the out-of-sample edge survive, in the direction the pair was discovered?
+
+    positive: joint must still fire >= HELD_EDGE x more often than independence.
+    negative: mirror image — joint must still fire <= 1/HELD_EDGE as often. Using the
+              reciprocal rather than a separate constant keeps the two bars equally
+              strict in proportional terms.
+    """
+    if edge is None or np.isnan(edge):
+        return False
+    return bool(edge >= HELD_EDGE) if direction == 'positive' else bool(edge <= HELD_EDGE_NEG)
+
+def _r_held(direction, r):
+    """Correlation kept its sign out of sample."""
+    if r is None or np.isnan(r):
+        return False
+    return bool(r > 0) if direction == 'positive' else bool(r < 0)
 
 val_rows = []
+_filters_before = dict(FILTER_STATS)
+_bh_before = dict(BH_STATS)
 
 for team, raw_dict in all_team_raw.items():
-    train_raw, test_raw = split_raw_dict(raw_dict, cutoff, min_n=3)
+    train_raw, test_raw = split_raw_dict(raw_dict, cutoff, min_n=TEST_MIN_N)
     train_prop = raw_to_prop_dict(train_raw)
 
     if len(train_prop) < 5:
         continue
 
-    # discover pairs on first-half data only (lower min_n since ~half the games)
+    # discover pairs on first-half data ONLY — the second half is never seen here
     with np.errstate(invalid='ignore', divide='ignore'):
-        train_results = parlay_finder(train_prop, n_legs=2, top_n=5, min_n=5,
-                                      fdr_q=0.10)
+        train_results = parlay_finder(train_prop, n_legs=2, top_n=5,
+                                      min_n=TRAIN_MIN_N, fdr_q=0.10,
+                                      raw_dict=train_raw, direction=SCAN_DIRECTION)
 
     for res in train_results:
         for ps in res['pairs']:
             a, b = ps['pair']
-            train_edge, train_n = pair_edge_on(a, b, train_raw)
-            test_edge,  test_n  = pair_edge_on(a, b, test_raw)
+            pair_dir = ps['direction']
+            tr = pair_stats_on(a, b, train_raw, min_n=TRAIN_MIN_N)
+            te = pair_stats_on(a, b, test_raw,  min_n=TEST_MIN_N)
             val_rows.append({
-                'team':        team,
-                'leg_1':       a,
-                'leg_2':       b,
-                'train_r':     round(ps['r'], 3),
-                'train_n':     train_n,
-                'train_edge':  round(train_edge, 2) if not np.isnan(train_edge) else np.nan,
-                'test_n':      test_n,
-                'test_edge':   round(test_edge, 2)  if not np.isnan(test_edge)  else np.nan,
-                'edge_held':   (not np.isnan(test_edge)) and test_edge >= 1.2,
+                'team':       team,
+                'leg_1':      a,
+                'leg_2':      b,
+                'direction':  pair_dir,
+                'tradeable_side': 'buy_yes' if pair_dir == 'positive' else 'buy_no',
+                'train_r':    _r2(ps['r'], 3),
+                'train_ci_lo': ps['ci'][0],
+                'train_n':    tr['n'],
+                'train_edge': _r2(tr['edge']),
+                'test_r':     _r2(te['r'], 3),
+                'test_n':     te['n'],
+                'test_edge':  _r2(te['edge']),
+                'r_held':     _r_held(pair_dir, te['r']),
+                'edge_held':  _edge_held(pair_dir, te['edge']),
             })
 
-val_df = pd.DataFrame(val_rows)
+val_df = pd.DataFrame(val_rows, columns=VAL_COLS)
 
 # deduplicate — same pair can appear for multiple combos
 val_df = val_df.drop_duplicates(subset=['team', 'leg_1', 'leg_2'])
 
-val_path = os.path.join(os.path.dirname(__file__), '..', 'parlays_validation.csv')
-val_df.to_csv(os.path.normpath(val_path), index=False)
+val_path = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', 'parlays_validation.csv'))
+val_df.to_csv(val_path, index=False)
+print(f"\nSaved {len(val_df)} first-half pairs to {val_path}")
 
-# summary stats
+val_filtered = {k: FILTER_STATS[k] - _filters_before[k] for k in FILTER_STATS}
+val_bh       = {k: BH_STATS[k] - _bh_before[k] for k in BH_STATS}
 valid = val_df.dropna(subset=['test_edge'])
-print(f"Pairs selected in training:        {len(val_df)}")
-print(f"Pairs with test data (n>=3):       {len(valid)}")
-print(f"Pairs where test_edge >= 1.2:      {valid['edge_held'].sum()}  "
-      f"({valid['edge_held'].mean():.0%} of those with test data)")
-print()
-print(f"Median train edge:   {val_df['train_edge'].median():.2f}x")
-print(f"Median test  edge:   {valid['test_edge'].median():.2f}x")
-print()
 
-# show all pairs sorted by test_edge
-print("All validated pairs (sorted by test_edge):")
-display_cols = ['team', 'leg_1', 'leg_2', 'train_r', 'train_n',
-                'train_edge', 'test_n', 'test_edge']
-print(valid.sort_values('test_edge', ascending=False)[display_cols].to_string(index=False))
+pos_df, neg_df = val_df[val_df['direction'] == 'positive'], val_df[val_df['direction'] == 'negative']
+pos_valid = valid[valid['direction'] == 'positive']
+neg_valid = valid[valid['direction'] == 'negative']
 
-# distribution of edge ratio change
-print("\nEdge ratio: train vs test")
+# An empty result is a real finding, not an error — it still gets a report explaining
+# which gate emptied the set, so a stale report from a previous run is never left behind.
+print(f"\nPairs discovered in first half:        {len(val_df)}  "
+      f"({len(pos_df)} positive, {len(neg_df)} negative)")
+print(f"Pairs gradeable in second half (n>={TEST_MIN_N}): {len(valid)}  "
+      f"({len(pos_valid)} positive, {len(neg_valid)} negative)")
+print(f"BH passed in validation: {val_bh['positive']} positive, {val_bh['negative']} negative")
+print(f"Rejected pre-FDR: {val_filtered['degenerate']} degenerate (|r|>={MAX_PAIR_R}), "
+      f"{val_filtered['zero_joint']} incoherent joint, "
+      f"{val_filtered['uninformative_joint']} uninformative negative")
+for _dname, _dvalid in (('positive', pos_valid), ('negative', neg_valid)):
+    if len(_dvalid):
+        _bar = f">= {HELD_EDGE}" if _dname == 'positive' else f"<= {HELD_EDGE_NEG:.3f}"
+        print(f"  {_dname}: {int(_dvalid['edge_held'].sum())}/{len(_dvalid)} held "
+              f"(edge {_bar}), median test edge {_dvalid['test_edge'].median():.2f}x")
+
 buckets = [
     ('collapsed  (<0.5x)',  valid['test_edge'] < 0.5),
     ('shrunk (0.5-1.0x)',   (valid['test_edge'] >= 0.5) & (valid['test_edge'] < 1.0)),
@@ -849,6 +1053,246 @@ buckets = [
     ('held   (1.2-2.0x)',   (valid['test_edge'] >= 1.2) & (valid['test_edge'] < 2.0)),
     ('strong (2.0x+)',      valid['test_edge'] >= 2.0),
 ]
-for label, mask in buckets:
-    n = mask.sum()
-    print(f"  {label}: {n} pairs ({n/len(valid):.0%})")
+
+if valid.empty:
+    print("\nNothing to grade — no first-half pair cleared the gates with enough "
+          "second-half games.")
+else:
+    print(f"Correlation kept its sign:             {valid['r_held'].sum()}  ({valid['r_held'].mean():.0%})")
+    print(f"Edge held in its own direction:        {valid['edge_held'].sum()}  ({valid['edge_held'].mean():.0%})")
+    print()
+    print(f"Median r:     first half {val_df['train_r'].median():.3f}  →  second half {valid['test_r'].median():.3f}")
+    print(f"Median edge:  first half {val_df['train_edge'].median():.2f}x  →  second half {valid['test_edge'].median():.2f}x")
+    print()
+
+    print("All graded pairs (sorted by second-half edge):")
+    display_cols = ['team', 'leg_1', 'leg_2', 'direction', 'tradeable_side',
+                    'train_r', 'train_n', 'train_edge', 'test_r', 'test_n', 'test_edge']
+    print(valid.sort_values('test_edge', ascending=False)[display_cols].to_string(index=False))
+
+    print("\nSecond-half edge ratio distribution")
+    for label, mask in buckets:
+        n = int(mask.sum())
+        print(f"  {label}: {n} pairs ({n/len(valid):.0%})")
+
+# html report
+def _fmt(v, places=2, suffix=''):
+    if v is None or (isinstance(v, float) and np.isnan(v)):
+        return '—'
+    return f"{v:.{places}f}{suffix}"
+
+def _val_rows_html(df):
+    out = []
+    for _, r in df.iterrows():
+        held = r['edge_held']
+        verdict = ("<span class='held'>HELD</span>" if held else
+                   "<span class='faded'>faded</span>")
+        drift = r['test_edge'] - r['train_edge'] if not (
+            np.isnan(r['test_edge']) or np.isnan(r['train_edge'])) else np.nan
+        out.append(f"""
+        <tr class="{'row-held' if held else ''}">
+          <td><span class='team-badge'>{r['team']}</span></td>
+          <td class='legs-cell'><span class='leg'>{r['leg_1']}</span><span class='leg'>{r['leg_2']}</span></td>
+          <td class='num'>{_fmt(r['train_r'], 3)}</td>
+          <td class='num'>{r['train_n']}</td>
+          <td class='num'>{_fmt(r['train_edge'], 2, '×')}</td>
+          <td class='num sep'>{_fmt(r['test_r'], 3)}</td>
+          <td class='num'>{r['test_n']}</td>
+          <td class='num'><strong>{_fmt(r['test_edge'], 2, '×')}</strong></td>
+          <td class='num'>{_fmt(drift, 2, '×')}</td>
+          <td>{verdict}</td>
+        </tr>""")
+    return '\n'.join(out)
+
+VAL_CSS = """
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+       background: #0f1117; color: #e2e8f0; padding: 32px 24px; }
+h1 { font-size: 1.6rem; font-weight: 700; margin-bottom: 6px; color: #f8fafc; }
+.subtitle { color: #94a3b8; font-size: 0.875rem; margin-bottom: 28px; }
+h2 { font-size: 1.15rem; font-weight: 600; color: #f1f5f9;
+     border-left: 3px solid #3b82f6; padding-left: 12px; margin-bottom: 6px; }
+.desc { font-size: 0.8rem; color: #64748b; margin-bottom: 14px; padding-left: 15px; }
+section { margin-bottom: 48px; }
+.cards { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 36px; }
+.card { background: #1e293b; border-radius: 8px; padding: 14px 18px; min-width: 150px; }
+.card .k { font-size: 0.72rem; color: #94a3b8; text-transform: uppercase;
+           letter-spacing: 0.06em; margin-bottom: 4px; }
+.card .v { font-size: 1.4rem; font-weight: 700; color: #f8fafc; }
+.card .sub { font-size: 0.72rem; color: #64748b; margin-top: 2px; }
+.table-wrap { overflow-x: auto; border-radius: 8px; border: 1px solid #1e293b; }
+table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+thead th { background: #1e293b; color: #94a3b8; font-weight: 600;
+           padding: 10px 12px; text-align: left; white-space: nowrap;
+           border-bottom: 1px solid #334155; cursor: help; }
+tbody tr { border-bottom: 1px solid #1e293b; }
+tbody tr:hover { background: #1a2235; }
+tr.row-held { background: rgba(52, 211, 153, 0.06); }
+td { padding: 9px 12px; vertical-align: middle; }
+.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sep { border-left: 1px solid #334155; }
+th.sep { border-left: 1px solid #475569; }
+.legs-cell { line-height: 1.6; }
+.leg { display: block; }
+.team-badge { background: #1e293b; color: #cbd5e1; border-radius: 4px;
+              padding: 3px 8px; font-size: 0.78rem; font-weight: 700;
+              letter-spacing: 0.05em; white-space: nowrap; }
+.held { color: #34d399; font-weight: 700; font-size: 0.75rem; letter-spacing: 0.05em; }
+.faded { color: #64748b; font-size: 0.75rem; }
+.note { background: #1e293b; border-radius: 8px; padding: 18px 22px;
+        font-size: 0.8rem; color: #94a3b8; line-height: 1.6; margin-bottom: 36px; }
+.note h3 { font-size: 0.85rem; color: #cbd5e1; margin-bottom: 8px; }
+.note ul { margin: 8px 0 0 18px; }
+"""
+
+def _agg(series, fmt="{:.2f}", how='median'):
+    """Format an aggregate, or an em dash when there is nothing to aggregate."""
+    if len(series) == 0 or series.isna().all():
+        return '—'
+    return fmt.format(series.median() if how == 'median' else series.mean())
+
+split_day  = cutoff[:10]
+# Positive sections keep their original semantics: only positive-direction pairs,
+# ranked by edge descending (furthest ABOVE 1.0 first).
+held_df    = (pos_valid[pos_valid['edge_held']].sort_values('test_edge', ascending=False)
+              if len(pos_valid) else pos_valid)
+faded_df   = (pos_valid[~pos_valid['edge_held']].sort_values('test_edge', ascending=False)
+              if len(pos_valid) else pos_valid)
+# Negative pairs rank the other way: furthest BELOW 1.0 first, so ascending edge.
+neg_sorted = neg_valid.sort_values('test_edge', ascending=True) if len(neg_valid) else neg_valid
+
+empty_banner = ''
+if valid.empty:
+    empty_banner = f"""
+<div class='note' style='border-left:3px solid #fbbf24'>
+  <h3>No pairs survived to grading</h3>
+  Discovery ran on games through {split_day} and produced
+  <strong>{len(val_df)}</strong> gradeable pair(s). Before FDR, the gates rejected
+  <strong>{val_filtered['degenerate']}</strong> pairs as degenerate (|r| &ge; {MAX_PAIR_R} —
+  two labels for the same event) and <strong>{val_filtered['zero_joint']}</strong> whose legs
+  never once hit together.
+  <ul>
+    <li>This is <em>not</em> evidence that correlation edge is absent — it means the
+        first half alone did not contain enough co-listed games to support a single
+        defensible pair at min_n={TRAIN_MIN_N}.</li>
+    <li>Kalshi lists a given prop on only a subset of games, so halving an already
+        sparse panel leaves very few overlapping observations per pair.</li>
+    <li>Re-run once the full season has resolved, or pool pairs by prop type rather
+        than by named player, to put real power behind this test.</li>
+  </ul>
+</div>"""
+bucket_html = ''.join(
+    f"<div class='card'><div class='k'>{lbl.split('(')[0].strip()}</div>"
+    f"<div class='v'>{int(mask.sum()) if len(valid) else 0}</div>"
+    f"<div class='sub'>{lbl[lbl.find('('):]}</div></div>"
+    for lbl, mask in buckets
+)
+
+val_html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MLB {SEASON_YEAR} — First Half vs Second Half</title>
+<style>{VAL_CSS}</style>
+</head>
+<body>
+<h1>MLB {SEASON_YEAR}: First Half vs Second Half</h1>
+<p class='subtitle'>Pairs discovered on games through <strong>{split_day}</strong>, then graded on
+everything after · Kalshi market data · BH-FDR q=10% · generated {SEASON_END}</p>
+
+<div class='cards'>
+  <div class='card'><div class='k'>Discovered</div><div class='v'>{len(val_df)}</div><div class='sub'>first-half pairs</div></div>
+  <div class='card'><div class='k'>Positive</div><div class='v'>{len(pos_df)}</div><div class='sub'>{len(pos_valid)} gradeable</div></div>
+  <div class='card'><div class='k'>Negative</div><div class='v'>{len(neg_df)}</div><div class='sub'>{len(neg_valid)} gradeable</div></div>
+  <div class='card'><div class='k'>Gradeable</div><div class='v'>{len(valid)}</div><div class='sub'>n&nbsp;&ge;&nbsp;{TEST_MIN_N} after split</div></div>
+  <div class='card'><div class='k'>Edge held</div><div class='v'>{int(valid['edge_held'].sum()) if len(valid) else 0}</div><div class='sub'>{_agg(valid['edge_held'], '{:.0%}', 'mean')} of graded</div></div>
+  <div class='card'><div class='k'>r still &gt; 0</div><div class='v'>{int(valid['r_held'].sum()) if len(valid) else 0}</div><div class='sub'>{_agg(valid['r_held'], '{:.0%}', 'mean')} of graded</div></div>
+  <div class='card'><div class='k'>Median edge</div><div class='v'>{_agg(valid['test_edge'], '{:.2f}×')}</div><div class='sub'>was {_agg(val_df['train_edge'], '{:.2f}×')} in H1</div></div>
+</div>
+{empty_banner}
+
+<div class='note'>
+  <h3>How to read this</h3>
+  Every pair here was selected using <em>only</em> games on or before {split_day} — the second-half
+  columns are genuinely out-of-sample. A pair counts as <span class='held'>HELD</span> when its
+  second-half edge ratio stays on the side it was discovered on: ≥ {HELD_EDGE}× for positive
+  pairs, ≤ {HELD_EDGE_NEG:.3f}× for negative ones.
+  <ul>
+    <li><strong>r</strong> — Pearson correlation of the surprise series (outcome − implied price).</li>
+    <li><strong>Edge</strong> — observed joint hit rate ÷ the rate implied by pricing the legs independently.
+        Shown raw and un-inverted, so &gt; 1 means the joint is underpriced and &lt; 1 means overpriced.</li>
+    <li><strong>Δ Edge</strong> — second half minus first half. For positive pairs a large negative
+        drift is the overfit tell; for negative pairs it is a large positive drift.</li>
+    <li>Second-half samples are small and the season is still running, so treat individual rows as
+        weak evidence; the aggregate hold rate is the meaningful number.</li>
+  </ul>
+</div>
+
+<section>
+  <h2>Held up — positive ({len(held_df)})</h2>
+  <p class='desc'>Positively-correlated pairs whose second-half edge is still ≥ {HELD_EDGE}×. Buy Yes.</p>
+  <div class='table-wrap'>
+  <table>
+    <thead><tr>
+      <th>Team</th><th>Props</th>
+      <th title="First-half correlation">H1 r</th>
+      <th title="First-half shared games">H1 n</th>
+      <th title="First-half edge ratio">H1 edge</th>
+      <th class='sep' title="Second-half correlation">H2 r</th>
+      <th title="Second-half shared games">H2 n</th>
+      <th title="Second-half edge ratio">H2 edge</th>
+      <th title="Change in edge ratio">&Delta; edge</th>
+      <th>Verdict</th>
+    </tr></thead>
+    <tbody>{_val_rows_html(held_df) or "<tr><td colspan='10'>Nothing held.</td></tr>"}</tbody>
+  </table>
+  </div>
+</section>
+
+<section>
+  <h2>Negative — overpriced joints ({len(neg_sorted)})</h2>
+  <p class='desc'>Negatively-correlated pairs: the legs fire together <em>less</em> often than
+  independent pricing implies, so the joint is overpriced. Sorted by how far below 1.0 the
+  second-half edge sits — furthest below first. Held at ≤ {HELD_EDGE_NEG:.3f}×. Buy No.</p>
+  <div class='table-wrap'>
+  <table>
+    <thead><tr>
+      <th>Team</th><th>Props</th>
+      <th>H1 r</th><th>H1 n</th><th>H1 edge</th>
+      <th class='sep'>H2 r</th><th>H2 n</th><th>H2 edge</th>
+      <th>&Delta; edge</th><th>Verdict</th>
+    </tr></thead>
+    <tbody>{_val_rows_html(neg_sorted) or "<tr><td colspan='10'>No negative pairs survived to grading.</td></tr>"}</tbody>
+  </table>
+  </div>
+</section>
+
+<section>
+  <h2>Faded — positive ({len(faded_df)})</h2>
+  <p class='desc'>Discovered as positive in the first half but the edge did not survive the second.</p>
+  <div class='table-wrap'>
+  <table>
+    <thead><tr>
+      <th>Team</th><th>Props</th>
+      <th>H1 r</th><th>H1 n</th><th>H1 edge</th>
+      <th class='sep'>H2 r</th><th>H2 n</th><th>H2 edge</th>
+      <th>&Delta; edge</th><th>Verdict</th>
+    </tr></thead>
+    <tbody>{_val_rows_html(faded_df) or "<tr><td colspan='10'>Nothing faded.</td></tr>"}</tbody>
+  </table>
+  </div>
+</section>
+
+<section>
+  <h2>Second-half edge distribution</h2>
+  <p class='desc'>Where the {len(valid)} graded pairs landed.</p>
+  <div class='cards'>{bucket_html}</div>
+</section>
+</body>
+</html>"""
+
+report_path = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', 'mlb_validation_report.html'))
+with open(report_path, 'w', encoding='utf-8') as f:
+    f.write(val_html)
+print(f"\nSaved {report_path}")
